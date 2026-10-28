@@ -995,7 +995,11 @@ function panelFooter(E: Els, v: View, cols: number, $: EngineInterface): { node:
     rows: lines.length + 2,
     node: (
       <Box key="hud-foot" flexDirection="column" flexShrink={0}>
-        <Text dimColor>{'─'.repeat(cols)}</Text>
+        {/* One row, clipped: the desktop app's font can make the rule a cell or two
+            wider than the columns it reports, and a wrapped rule reads as two. */}
+        <Box height={1} overflow="hidden">
+          <Text dimColor wrap="truncate">{'─'.repeat(cols)}</Text>
+        </Box>
         {lines}
         {UsageButtons(E, v, $, cols, 'panel')}
       </Box>
