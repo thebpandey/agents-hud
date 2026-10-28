@@ -632,7 +632,9 @@ function Card(E: Els, v: View, d: CardData, cols: number) {
   const { Box, Text, Button } = E
   const tiny = v.density === 2
   const inner = Math.max(16, cols - AV_W - 3)
-  const barW = tiny ? 0 : Math.max(4, Math.min(12, Math.floor(inner / 3)))
+  // The bar takes what the name and a short branch leave over, between 4 and 8 cells:
+  // a long bar was cutting the name, which matters more than the bar's resolution.
+  const barW = tiny ? 0 : Math.max(4, Math.min(8, Math.floor(inner / 5), inner - 6 - d.nick.length - 8))
   const right = tiny ? `${d.st.icon} ${cut(d.st.label, 10)} ${d.noCtx ? 'ext' : d.pct === undefined ? '  –' : `${String(Math.round(d.pct)).padStart(3)}%`}` : ''
   const left = Math.max(6, inner - (tiny ? right.length + 1 : barW + 6))
   // The name whole, then the branch (up to about half of what's left), then the description.
