@@ -987,19 +987,36 @@ function expandedBand(E: Els, v: View, cols: number, $: EngineInterface) {
   )
 }
 
+/**
+ * The rule over the usage lines. The terminal draws it as box characters; the
+ * desktop app sets text in its own font, where a run sized in columns overflows
+ * the panel (wrapping, or an ellipsis), so there it is a hairline as wide as the panel.
+ */
+function FooterRule(E: Els, cols: number): RenderChildren {
+  if ('Svg' in E) {
+    const { Svg } = E as Els & { Svg: ElementConstructor<SvgProps> }
+    return (
+      <Svg
+        key="hud-rule"
+        source={'<svg xmlns="http://www.w3.org/2000/svg" width="10000" height="9" viewBox="0 0 10000 9" preserveAspectRatio="none"><rect x="0" y="4" width="10000" height="1" fill="#888" fill-opacity="0.5"/></svg>'}
+        alt=""
+        height={9}
+      />
+    )
+  }
+  const { Text } = E
+  return <Text dimColor>{'─'.repeat(cols)}</Text>
+}
+
 /** The panel's foot: a rule, the usage lines, then the settings row. */
 function panelFooter(E: Els, v: View, cols: number, $: EngineInterface): { node: RenderChildren; rows: number } {
-  const { Box, Text } = E
+  const { Box } = E
   const lines = usageLines(E, v, cols, 'panel')
   return {
     rows: lines.length + 2,
     node: (
       <Box key="hud-foot" flexDirection="column" flexShrink={0}>
-        {/* One row, clipped: the desktop app's font can make the rule a cell or two
-            wider than the columns it reports, and a wrapped rule reads as two. */}
-        <Box height={1} overflow="hidden">
-          <Text dimColor wrap="truncate">{'─'.repeat(cols)}</Text>
-        </Box>
+        {FooterRule(E, cols)}
         {lines}
         {UsageButtons(E, v, $, cols, 'panel')}
       </Box>
