@@ -171,10 +171,16 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ type: 'Text', text: /⎇ lane-a1/ })).toBeFalsy()
     // A reviewer whose brief names only the lane is grouped under it too.
     const order = (await ui.findAll({ type: 'Text' })).map(x => x.text)
-    const reviewAt = order.findIndex(x => /^ Review/.test(x))
-    const otherAt = order.findIndex(x => /^Other agents$/.test(x))
-    expect(reviewAt).toBeGreaterThan(-1)
-    expect(otherAt === -1 || reviewAt < otherAt).toBe(true)
+    const at = (re: RegExp) => order.findIndex(x => re.test(x))
+    const reviewAt = at(/^ Review/)
+    const laneAt = at(/^ a1-auth$/)
+    expect(reviewAt).toBeGreaterThan(laneAt)
+    // Agents the session started outside any lane come first, above every lane.
+    const directAt = at(/^Direct agents$/)
+    expect(directAt).toBeGreaterThan(-1)
+    expect(at(/^ docs pass/)).toBeGreaterThan(directAt)
+    expect(at(/^ docs pass/)).toBeLessThan(laneAt)
+    expect(at(/^Lanes$/)).toBeLessThan(laneAt)
     expect(await ui.find({ type: 'Text', text: /DeepSeek V4\.1 Flash/ })).toBeTruthy()
     // Under its own lane, an agent's description drops the lane-name prefix.
     expect(await ui.find({ type: 'Text', text: /^ auth r/ })).toBeTruthy()

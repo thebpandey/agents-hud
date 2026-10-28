@@ -1121,6 +1121,13 @@ function laneItems(E: Els, v: View, cols: number, $: EngineInterface): Item[] {
     else loose.push(a)
   }
   const out: Item[] = []
+  // Agents this session started itself, outside any lane, always come first.
+  if (loose.length) {
+    out.push({ rows: 1, node: <Text bold dimColor>Direct agents</Text> })
+    for (const a of sortAgents(loose)) out.push({ rows: card, node: agentCard(E, v, a, cols, $) })
+    if (v.density !== 0) out.push({ rows: 1, node: <Text key="gap-direct"> </Text> })
+    out.push({ rows: 1, node: <Text bold dimColor>Lanes</Text> })
+  }
   if (v.l.rows.length === 0) out.push({ node: <Text dimColor>No lanes running</Text>, rows: 1 })
   // Lanes with something running first, then lanes whose agents or jobs have
   // finished (latest first); lanes with nothing in this session fold into one row.
@@ -1190,10 +1197,6 @@ function laneItems(E: Els, v: View, cols: number, $: EngineInterface): Item[] {
   if (looseJobs.length) {
     out.push({ rows: 1, node: <Text bold dimColor>External jobs</Text> })
     for (const j of sortJobs(looseJobs)) out.push({ rows: card, node: jobCard(E, v, j, cols) })
-  }
-  if (loose.length) {
-    out.push({ rows: 1, node: <Text bold dimColor>Other agents</Text> })
-    for (const a of sortAgents(loose)) out.push({ rows: card, node: agentCard(E, v, a, cols, $) })
   }
   return out
 }

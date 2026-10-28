@@ -54,7 +54,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
 - **Avatars move while their agent works** and stand still once it's idle or done.
-- **Lanes:** after you run `/lanes`, agents are grouped under their lane, with a rail down the left of each lane's cards. Lanes with something running come first. Lanes with nothing in this session fold into one "▸ N more lanes" row that you can click to expand.
+- **Lanes:** after you run `/lanes`, agents the session starts directly (outside any lane) are listed first, under **Direct agents**. Below them, agents are grouped under their lane, with a rail down the left of each lane's cards. Lanes with something running come first. Lanes with nothing in this session fold into one "▸ N more lanes" row that you can click to expand.
 - **Many agents:** cards shrink to fit the panel, down to one line each. If they still don't fit, the cards scroll with the mouse wheel, with the arrow keys while the panel has focus, or with the ▲/▼ "more" rows.
 
 ### Usage stats and settings
@@ -117,7 +117,7 @@ claude plugin uninstall agents-hud
 - **No panel in the CLI:** your terminal is under 144 columns and not in fullscreen. Run `/agents-hud`, widen the terminal, or use fullscreen mode.
 - **No panel in the desktop app:** send a prompt, or run `/agents-hud`. If you closed the panel earlier in the session, only `/agents-hud` reopens it.
 - **A second list of agents under the prompt:** that's Claude Code's own background-task list, not this mod. Press `ctrl+t` to hide or show it.
-- **An agent is under "Other agents" instead of its lane:** the panel matches an agent to a lane when its brief names the lane's worktree path, its lane folder, or the lane by name. Mention one of those in the agent's brief.
+- **An agent is under "Direct agents" instead of its lane:** the panel matches an agent to a lane when its brief names the lane's worktree path, its lane folder, or the lane by name. Mention one of those in the agent's brief.
 - **No 5-hour or weekly bars:** plan limits arrive with Claude's next response. Until then the panel shows "Plan limits arrive with the next response."
 
 ## How it works
