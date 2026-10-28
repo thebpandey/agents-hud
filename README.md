@@ -1,44 +1,135 @@
 # agents-hud
 
-A Claude Code side panel that lists the agents in your session, each on a card with a pixel-robot avatar, a name and branch, a live status (Thinking, Generating, the tool it's running, Idle, Done) with tool count and run time, a context bar and the model.
+A side panel for Claude Code that shows every agent in your session at a glance. Each agent has a card with a pixel-art avatar, a name, what it's working on, a live status (Thinking, Generating, the tool it's running, Idle, Done), its context use and its model. At the bottom of the panel you see your session's context and your plan's 5-hour and weekly limits, with reset times and a pace forecast.
 
-- **Agents view:** the default. It shows this session's card first, then every subagent and teammate. Press an agent's name to open its transcript.
-- **Lanes view:** switches on once you run `/lanes` in the session. It groups agents under the lanes in the lanes skill's `lanes.tsv` registry, matching each agent to a lane by the worktree path in its brief. Lanes with something running come first, then lanes whose agents have finished (latest first). Lanes with nothing in this session fold into one "▸ N more lanes" row that opens on a click. Agents that match no lane go under "Other agents". In every list, running agents come before finished ones.
-- **External agents:** background relay jobs started by the lanes skill (`model-relay`, `codex-lane`, `codex-review`) appear as cards under their lane, or under "External jobs" when they match no lane. Each card shows its real engine, such as DeepSeek or GPT-6.1-sol, and whether it's running, done, failed or stopped. Relay subagents (`deepseek`, `glm`, and the rest) show the external model instead of their Haiku relay. External cards have no context bar.
-- **Names:** every subagent and external job gets a robot name (Nova, Bolt, Pixel…) the moment its card appears, shown before its description. A name stays with its agent for the session, and no two cards share one. Teammates keep the name they were given.
-- **Crowding:** cards shrink to fit the panel, from full cards with a 3-row robot, to 2-row compact cards, to one line each. Past that the header and this session's card stay put, and the cards between them scroll with the mouse wheel, the arrow keys while the panel has focus, or the ▲/▼ "more" rows.
-- **Usage:** at the foot of the side panel by default, or in a band above the prompt (`⇠ to chat` / `⇢ to panel`, or `/agents-hud chat` / `/agents-hud panel`). It shows the context, 5-hour and weekly bars with reset countdowns and local reset times. `▾ more` opens upward with:
-  - the context window, with tokens used, the window size and where autocompact starts;
-  - what fills the window (messages, system tools, skills, memory files…);
-  - a pace line under each limit: when you'd run out at your current rate, or "Resets before you'd run out". A time on any day but today also shows its date.
+While the `/lanes` skill runs, the panel groups agents under their lanes. It also shows the external relay and Codex jobs that the lanes skill starts.
 
-  The settings row under it holds more, theme, avatar style and placement.
-- **Motion:** an avatar moves only while its agent works. It bobs and blinks while thinking, bounces while generating, and flashes its accent while running a tool. Idle, done and stopped agents stand still. `/agents-hud motion off` keeps them all still.
-- **Avatar styles:** robots, cats, slimes, aliens, animals (bear, fox, panda, bunny, frog, mouse, pig, monkey, koala, penguin, lion and dog faces) and owls. `☺` in the band, or `/agents-hud avatars [style]`, switches style, and new sessions keep it.
-- **Themes:** Claude, Ember, Amber, Harbor, Forest, Bone, Wine and Terminal (your terminal's own colours, for light backgrounds). `🎨` in the band, or `/agents-hud theme [name]`, switches theme, and new sessions keep your pick.
-
-`/agents-hud`, or `◫ panel` in the band, opens the panel again after you close it. `/agents-hud lanes`, `/agents-hud agents` or `/agents-hud auto` sets the grouping. `/agents-hud more` opens or closes the breakdown, and `/agents-hud theme` switches theme.
-
-On the desktop app the avatars are drawn as SVG pixel art. The terminal draws them with half-block characters.
-
-The panel docks beside the chat in fullscreen mode, or when the terminal is at least 144 columns wide. In the desktop app it opens on your first prompt, or with `/agents-hud`.
-
-Runs on Linux and macOS.
+It works in the Claude Code CLI (terminal) and in the Claude Code desktop app, on Linux and macOS. It makes no model calls and adds nothing to your prompts, so it uses no tokens.
 
 ## Install
 
-At the prompt of a Claude Code terminal session:
+Requires Claude Code 2.1.275 or later.
+
+### Claude Code CLI (terminal)
+
+At the prompt of any Claude Code session, run:
 
 ```
 /plugin install agents-hud --marketplace thebpandey/agents-hud
 ```
 
-Answer `y` to add the marketplace, then press Enter for the user scope. From a shell:
+1. Answer `y` to add the marketplace.
+2. Press Enter to pick the **user** scope, so the mod loads in every session.
+
+You can also install it from a shell instead of a session:
 
 ```
 claude plugin install agents-hud --marketplace thebpandey/agents-hud
 ```
 
-In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `thebpandey/agents-hud`, then Add plugin.
+The mod starts working in the current session right away, and in every session after it.
 
-To update: `claude plugin update agents-hud`, then `/reload-plugins`.
+### Claude Code desktop app
+
+`/plugin` doesn't run in the desktop app. Use the app's plugin menu instead:
+
+1. In a Code session, click **+** next to the prompt box.
+2. Choose **Plugins**, then **Add marketplace**, and enter `thebpandey/agents-hud`.
+3. Click **Add plugin** next to agents-hud.
+
+If you already installed the mod from a terminal at the user scope on the same computer, you're done: the desktop app's local sessions load it too. Cloud sessions run on a remote machine, so they don't load it.
+
+## Use
+
+### Opening the panel
+
+- **CLI:** the panel opens by itself beside the chat in fullscreen mode, or when your terminal is at least 144 columns wide. In a narrower terminal, run `/agents-hud` to open it.
+- **Desktop app:** the panel opens on your first prompt of each session. To open it sooner, or after you close it, run `/agents-hud`.
+
+If you close the panel, it stays closed until you run `/agents-hud` again.
+
+### What you see
+
+- **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active.
+- **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
+- **Click an agent's name** to open its transcript.
+- **Avatars move while their agent works** and stand still once it's idle or done.
+- **Lanes:** after you run `/lanes`, agents are grouped under their lane, with a rail down the left of each lane's cards. Lanes with something running come first. Lanes with nothing in this session fold into one "▸ N more lanes" row that you can click to expand.
+- **Many agents:** cards shrink to fit the panel, down to one line each. If they still don't fit, the cards scroll with the mouse wheel, with the arrow keys while the panel has focus, or with the ▲/▼ "more" rows.
+
+### Usage stats and settings
+
+The bottom of the panel shows three bars, each in its own colour:
+
+| Bar | Shows |
+|---|---|
+| **Context** | Tokens used of the context window |
+| **5-hour** | Your 5-hour plan limit, with a reset countdown and the local reset time |
+| **Weekly** | Your weekly plan limit, with a reset countdown and the reset day and time |
+
+Any bar turns amber at 60% and red at 85%.
+
+The row under the bars holds the settings:
+
+| Button | What it does |
+|---|---|
+| `▾ more` / `▴ less` | Opens a detailed view above the bars: what fills the context window (messages, system tools, skills, memory files), where autocompact starts, and a pace line under each limit, such as "⚠ At this pace you'll run out by 4:12 PM" or "✓ Resets before you'd run out" |
+| `🎨 Claude` | Switches to the next colour theme |
+| `☺ robots` | Switches to the next avatar style |
+| `⇠ to chat` | Moves the usage stats to a band above the prompt, under the chat. There, `⇢ to panel` moves them back, and `◫ panel` opens or closes the side panel |
+
+Themes: Claude, Ember, Amber, Harbor, Forest, Bone, Wine, and Terminal, which uses your terminal's own colours and suits light backgrounds.
+
+Avatar styles: robots, cats, slimes, aliens, animals (12 animal faces) and owls.
+
+Your theme, avatar style, motion and usage placement are kept for new sessions.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `/agents-hud` | Opens the panel |
+| `/agents-hud lanes`, `agents` or `auto` | Groups by lane, lists all agents, or switches to lanes automatically once `/lanes` runs (the default) |
+| `/agents-hud more` | Opens or closes the detailed usage view |
+| `/agents-hud theme [name]` | Switches theme, to the next one or the one you name |
+| `/agents-hud avatars [style]` | Switches avatar style, to the next one or the one you name |
+| `/agents-hud panel` / `chat` | Puts the usage stats in the side panel or in the band above the prompt |
+| `/agents-hud motion on` / `off` | Turns avatar animation on or off |
+
+## Update
+
+From a terminal on each computer:
+
+```
+claude plugin update agents-hud
+```
+
+Then run `/reload-plugins` in any open CLI session, or start a new session. In the desktop app, start a new session.
+
+## Uninstall
+
+```
+claude plugin uninstall agents-hud
+```
+
+## Troubleshooting
+
+- **No panel in the CLI:** your terminal is under 144 columns and not in fullscreen. Run `/agents-hud`, widen the terminal, or use fullscreen mode.
+- **No panel in the desktop app:** send a prompt, or run `/agents-hud`. If you closed the panel earlier in the session, only `/agents-hud` reopens it.
+- **A second list of agents under the prompt:** that's Claude Code's own background-task list, not this mod. Press `ctrl+t` to hide or show it.
+- **An agent is under "Other agents" instead of its lane:** the panel matches an agent to a lane when its brief names the lane's worktree path, its lane folder, or the lane by name. Mention one of those in the agent's brief.
+- **No 5-hour or weekly bars:** plan limits arrive with Claude's next response. Until then the panel shows "Plan limits arrive with the next response."
+
+## How it works
+
+The mod is one TypeScript hooks module that runs inside Claude Code's plugin sandbox. It has no network access and no background process of its own.
+
+| What | Where it comes from |
+|---|---|
+| Agents and their activity | Claude Code's agent list and each agent's tool calls and turns |
+| Context and plan limits | The same figures as Claude Code's status line |
+| Context breakdown | A local estimate that makes no API calls |
+| Lanes | The lanes skill's registry at `~/.local/state/lanes/<repo>-<hash>/lanes.tsv` |
+| External jobs | The lanes skill's job folders in `~/.local/state` (`model-relay.*`, `codex-lane.*`, `codex-review.*`) |
+
+In the terminal the avatars are drawn with half-block characters. In the desktop app they're drawn as SVG pixel art.
