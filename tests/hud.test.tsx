@@ -216,3 +216,28 @@ test('on desktop the first prompt opens the panel, once', async ($, on) => {
   await $.prompt.submit({ text: 'again' })
   expect(opened.count).toBe(atStart + 1)
 })
+
+test("the band's ◫ panel button toggles the side panel", async ($, on) => {
+  engine(on)
+  const shown = { now: true }
+  const closed: string[] = []
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('ui.panes', () => ({ value: [{ id: 'agents-hud', title: 'Agents', isShown: shown.now, isFocused: false, isPlaced: true }] }))
+  on('ui.close', (_, e) => (closed.push((e as { id: string }).id), { value: undefined }))
+  await $.session.start({ cwd: REPO, surface: 'desktop', isInteractive: true })
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await pane.press({ key: 'hud-move' })
+  await pane.unmount()
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  await band.press({ key: 'hud-panel' })
+  expect(closed).toEqual(['agents-hud'])
+
+  shown.now = false
+  const before = opened.count
+  await band.press({ key: 'hud-panel' })
+  expect(opened.count).toBe(before + 1)
+  expect(closed).toEqual(['agents-hud'])
+  await band.unmount()
+})

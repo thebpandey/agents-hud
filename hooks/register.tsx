@@ -852,7 +852,7 @@ function UsageButtons(E: Els, v: View, $: EngineInterface, cols: number, where: 
       <Button key="hud-more" plain label={isOpen ? '▴ less' : '▾ more'} onPress={() => void toggleBand($, cols)} />
       <Button key="hud-theme" plain label={`🎨 ${v.t.name}`} onPress={() => void nextTheme($)} />
       {where === 'panel' || cols >= 90 ? <Button key="hud-avatars" plain label={`☺ ${v.style}`} onPress={() => void nextAvatars($)} /> : null}
-      {where === 'band' ? <Button key="hud-panel" plain label="◫ panel" onPress={() => void $.ui.open({ id: PANE, title: TITLE })} /> : null}
+      {where === 'band' ? <Button key="hud-panel" plain label="◫ panel" onPress={() => void togglePanel($)} /> : null}
       <Button key="hud-move" plain label={where === 'panel' ? '⇠ to chat' : '⇢ to panel'} onPress={() => void movePlacement($)} />
     </Box>
   )
@@ -1039,6 +1039,12 @@ async function movePlacement($: EngineInterface) {
   const to = await update($, placement, p => (p === 'panel' ? 'band' : 'panel'))
   await $.store.set('placement', to).catch(() => undefined)
   if (to === 'panel') await $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+}
+
+async function togglePanel($: EngineInterface) {
+  const pane = (await $.ui.panes()).find(p => p.id === PANE)
+  if (pane?.isShown) await $.ui.close({ id: PANE })
+  else await $.ui.open({ id: PANE, title: TITLE })
 }
 
 async function refreshBreakdown($: EngineInterface, columns: number) {
