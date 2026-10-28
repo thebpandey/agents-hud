@@ -247,3 +247,21 @@ test("the band's ◫ panel button toggles the side panel", async ($, on) => {
   expect(closed).toEqual(['agents-hud'])
   await band.unmount()
 })
+
+test("one-line cards' avatars light only the top half of their row, so they don't merge", async ($, on) => {
+  engine(on, 30)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, scroll: { offset: 0, bodyRows: 30 } } })
+  const av = (await ui.findAll({ type: 'Raster' })).find(x => /^av2robots-c\d+$/.test(String(x.key)))
+  expect(av).toBeTruthy()
+  // Each cell is three words: the glyph, its colour, the colour under it.
+  const bytes = Uint8Array.from(atob(String(av!.props.cells)), ch => ch.charCodeAt(0))
+  const words = new Uint32Array(bytes.buffer)
+  const backs = new Set<number>()
+  for (let i = 0; i < words.length; i += 3) {
+    expect(words[i]).not.toBe(0x2584)
+    backs.add(words[i + 2]!)
+  }
+  expect(backs.size).toBe(1)
+  await ui.unmount()
+})

@@ -275,11 +275,14 @@ function avatarCells(id: string, isMain: boolean, density: Density, t: Theme, st
     CELLS.set(memo, out)
     return out
   }
+  // A one-line card's face fills the top half of its cell alone: with both halves lit,
+  // the faces of cards on consecutive rows touched and read as one tall avatar.
+  const gap = density === 2
   const words = new Uint32Array(AV_W * rows * 3)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < AV_W; c++) {
       const top = pal[grid[px[r * 2]!]![c]!]
-      const bot = pal[grid[px[r * 2 + 1]!]![c]!]
+      const bot = gap ? undefined : pal[grid[px[r * 2 + 1]!]![c]!]
       const i = (r * AV_W + c) * 3
       if (top === undefined && bot === undefined) words.set([0x20, DEFAULT, DEFAULT], i)
       else if (top === undefined) words.set([0x2584, bot!, DEFAULT], i)
@@ -644,7 +647,11 @@ function Card(E: Els, v: View, d: CardData, cols: number) {
   // The bar takes what the name and a short branch leave over, between 4 and 8 cells:
   // a long bar was cutting the name, which matters more than the bar's resolution.
   const barW = tiny ? 0 : Math.max(4, Math.min(8, Math.floor(inner / 5), inner - 6 - d.nick.length - 8))
-  const right = tiny ? `${d.st.icon} ${cut(d.st.label, 10)} ${d.noCtx ? 'ext' : d.pct === undefined ? '  –' : `${String(Math.round(d.pct)).padStart(3)}%`}` : ''
+  // One line still names the agent's own model: a lane's agents needn't share the one
+  // its registry row plans, and an external job's engine says more than "ext".
+  const model = tiny && d.model ? `${cut(d.model, 14)} ` : ''
+  const status = tiny ? `${d.st.icon} ${cut(d.st.label, 10)} ${d.noCtx ? '' : d.pct === undefined ? '  –' : `${String(Math.round(d.pct)).padStart(3)}%`}`.trimEnd() : ''
+  const right = model + status
   const left = Math.max(6, inner - (tiny ? right.length + 1 : barW + 6))
   // The name whole, then the branch (up to about half of what's left), then the description.
   const nick = cut(d.nick, Math.max(4, left - 8))
@@ -669,7 +676,10 @@ function Card(E: Els, v: View, d: CardData, cols: number) {
         {Avatar(E, v, d.id, d.isMain, d.motion)}
         <Box flexDirection="row" flexGrow={1} justifyContent="space-between">
           <Box flexShrink={1}>{head}</Box>
-          <Text color={d.st.color}>{right}</Text>
+          <Text>
+            <Text dimColor>{model}</Text>
+            <Text color={d.st.color}>{status}</Text>
+          </Text>
         </Box>
       </Box>
     )
