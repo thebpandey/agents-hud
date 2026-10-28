@@ -20,6 +20,9 @@ const BAND = {
   props: { hasSurvey: false, isWorking: false, maxRows: 30, bodyColumns: 120, scroll: { offset: 0, bodyRows: 30 }, view: {} },
 } as const
 
+/** How many times the mod asked for its pane; reset per test. */
+const opened = { count: 0 }
+
 const REPO = '/home/me/dev/proj'
 // Lanes registered earlier, with nothing in this session; listed before the live one.
 const IDLE_FIRST = ['z1-old', 'z2-old', 'z3-old']
@@ -30,7 +33,7 @@ const WT = `${REPO}/.claude/worktrees/lane-a1-auth`
 function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0) {
   const clock = mock.clock(on)
   on('command.register', () => ({ value: { command: 'agents-hud' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', () => (opened.count++, { value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: REPO }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
@@ -191,4 +194,17 @@ test("a working agent's avatar moves; a finished one stays still", async ($, on)
   expect(seen.a1.size).toBeGreaterThan(1)
   expect(seen.a2.size).toBe(1)
   await ui.unmount()
+})
+
+test('on desktop the first prompt opens the panel, once', async ($, on) => {
+  engine(on)
+  on('ui.panes', () => ({ value: [{ id: 'agents-hud', title: 'Agents', isShown: false, isFocused: false, isPlaced: false }] }))
+  on('session.surfaces', () => ({ value: ['desktop'] }))
+  on('prompt.submit', (_, e) => ({ text: e.text }))
+  await $.session.start({ cwd: REPO, surface: 'desktop', isInteractive: true })
+  const atStart = opened.count
+  await $.prompt.submit({ text: 'hello' })
+  expect(opened.count).toBe(atStart + 1)
+  await $.prompt.submit({ text: 'again' })
+  expect(opened.count).toBe(atStart + 1)
 })

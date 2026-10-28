@@ -14,14 +14,14 @@ A Claude Code side panel that lists the agents in your session, each on a card w
 
   The settings row under it holds more, theme, avatar style and placement.
 - **Motion:** an avatar moves only while its agent works. It bobs and blinks while thinking, bounces while generating, and flashes its accent while running a tool. Idle, done and stopped agents stand still. `/agents-hud motion off` keeps them all still.
-- **Avatar styles:** robots, cats, slimes, aliens and owls. `☺` in the band, or `/agents-hud avatars [style]`, switches style, and new sessions keep it.
+- **Avatar styles:** robots, cats, slimes, aliens, animals (bear, fox, panda, bunny, frog, mouse, pig, monkey, koala, penguin, lion and dog faces) and owls. `☺` in the band, or `/agents-hud avatars [style]`, switches style, and new sessions keep it.
 - **Themes:** Claude, Ember, Amber, Harbor, Forest, Bone, Wine and Terminal (your terminal's own colours, for light backgrounds). `🎨` in the band, or `/agents-hud theme [name]`, switches theme, and new sessions keep your pick.
 
 `/agents-hud`, or `◫ panel` in the band, opens the panel again after you close it. `/agents-hud lanes`, `/agents-hud agents` or `/agents-hud auto` sets the grouping. `/agents-hud more` opens or closes the breakdown, and `/agents-hud theme` switches theme.
 
 On the desktop app the avatars are drawn as SVG pixel art. The terminal draws them with half-block characters.
 
-The panel docks beside the chat in fullscreen mode, or when the terminal is at least 144 columns wide.
+The panel docks beside the chat in fullscreen mode, or when the terminal is at least 144 columns wide. In the desktop app it opens on your first prompt, or with `/agents-hud`.
 
 Runs on Linux and macOS.
 

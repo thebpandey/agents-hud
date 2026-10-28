@@ -188,6 +188,21 @@ const AVATARS: Record<string, string[][]> = {
     ['a.aa.a', 'hhhhhh', 'heehee', 'hhmmhh', '.bbbb.', 'b....b'],
     ['.a..a.', '.hhhh.', 'eehhee', 'hhhhhh', '.hbbh.', 'h.bb.h'],
   ],
+  // Faces: bear, fox, panda, bunny, frog, mouse, pig, monkey, koala, penguin, lion, dog.
+  animals: [
+    ['bb..bb', 'bhhhhb', 'hehheh', 'hhmmhh', 'hhaahh', '.hhhh.'],
+    ['h....h', 'hh..hh', 'hhhhhh', 'hehheh', '.bmmb.', '..bb..'],
+    ['m....m', 'hhhhhh', 'mehhem', 'hhmmhh', 'hhhhhh', '.hhhh.'],
+    ['.h..h.', '.a..a.', '.hhhh.', 'hehheh', 'hhaahh', '.hhhh.'],
+    ['hh..hh', 'emhhme', 'hhhhhh', 'hmmmmh', 'hhhhhh', '.b..b.'],
+    ['hh..hh', 'ha..ah', '.hhhh.', 'hehheh', '.hmmh.', '..hh..'],
+    ['h....h', 'hhhhhh', 'hehheh', 'hammah', 'hhhhhh', '.hhhh.'],
+    ['.hhhh.', 'hhhhhh', 'aehhea', 'abbbba', '.bmmb.', '..bb..'],
+    ['bb..bb', 'bbhhbb', 'hehheh', 'hhmmhh', 'hhmmhh', '.hhhh.'],
+    ['.mmmm.', 'mhhhhm', 'mehhem', 'mhaahm', 'mhhhhm', '.a..a.'],
+    ['bbbbbb', 'bhhhhb', 'behheb', 'bhmmhb', 'bhhhhb', '.bbbb.'],
+    ['.hhhh.', 'bhhhhb', 'behheb', 'bhmmhb', '.haah.', '..hh..'],
+  ],
   owls: [
     ['b....b', 'hhhhhh', 'eehhee', 'hhaahh', 'hbbbbh', '.a..a.'],
     ['h....h', 'hbhhbh', 'eehhee', 'hhaahh', 'hbbbbh', '.a..a.'],
@@ -1199,6 +1214,11 @@ async function markLanes($: EngineInterface) {
 export const register: Register = on => {
   let ticker: { cancel: () => void } | undefined
   let animator: { cancel: () => void } | undefined
+  // Opened unasked at session start, a pane is only placed from 144 columns, which
+  // a desktop window measured in code-font cells seldom reaches. A prompt counts as
+  // asking, so on a remote surface the first one opens it: unless the person closed it.
+  let closedByPerson = false
+  let triedOnPrompt = false
   let ticks = 0
 
   on('session.start', async ($, e, next) => {
@@ -1282,6 +1302,7 @@ export const register: Register = on => {
       return { text: `Agents HUD avatars: ${st}. Styles: ${AVATAR_STYLES.join(', ')}.` }
     }
     if (arg === 'lanes' || arg === 'agents' || arg === 'auto') await update($, mode, () => arg as HudMode)
+    closedByPerson = false
     const opened = await $.ui.open({ id: PANE, title: TITLE })
     const md = await read($, mode)
     return {
@@ -1296,7 +1317,18 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('ui.close', async ($, e, next) => {
+    if (e.id === PANE && e.origin.kind === 'person') closedByPerson = true
+    return next(e)
+  })
+
   on('prompt.submit', async ($, e, next) => {
+    if (!triedOnPrompt && !closedByPerson) {
+      triedOnPrompt = true
+      const remote = (await $.session.surfaces()).some(x => x !== 'terminal')
+      const pane = (await $.ui.panes()).find(p => p.id === PANE)
+      if (remote && !pane?.isPlaced) await $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+    }
     const at = await $.clock.now()
     await update($, main, m => ({ ...m, working: true, turnStartedAt: at, activity: 'thinking' as const, tool: undefined }))
     await update($, now, () => at)
