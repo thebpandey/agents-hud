@@ -111,6 +111,9 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ type: 'Text', text: /Context.*25%/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /5-hour.*14%/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /Weekly.*22%/ })).toBeTruthy()
+    // Each meter wears its own colour: the labels of the three bars differ.
+    const labels = await Promise.all(['Context', '5-hour', 'Weekly'].map(l => ui.find({ type: 'Text', text: new RegExp(`^${l} +$`) })))
+    expect(new Set(labels.map(x => x?.props.color)).size).toBe(3)
 
     await ui.press({ key: 'hud-more' })
     expect(await ui.find({ type: 'Text', text: /CONTEXT WINDOW/ })).toBeTruthy()

@@ -31,6 +31,7 @@ const PANE = 'agents-hud'
 const TITLE = 'Agents'
 const TICK_MS = 2000
 const ANIM_MS = 450
+const GUTTER = 1
 const KEEP_DONE_MS = 30 * 60_000
 const LIVE = new Set(['pending', 'running', 'waiting'])
 
@@ -123,18 +124,19 @@ function hsl(h: number, s: number, l: number): number {
 
 // ── Themes: one accent in three shades; picked by the person, kept across sessions ──
 
-type Theme = { name: string; stops?: [string, string, string] }
+/** `stops`: the accent in three shades. `meters`: the Context, 5-hour and Weekly bars' own colours. */
+type Theme = { name: string; stops?: [string, string, string]; meters: [string, string, string] }
 
 const THEMES: Theme[] = [
-  { name: 'Claude', stops: ['#A8553A', '#D97757', '#EBA285'] },
-  { name: 'Ember', stops: ['#7F1D1D', '#B91C1C', '#E05252'] },
-  { name: 'Amber', stops: ['#78350F', '#B45309', '#D9A441'] },
-  { name: 'Harbor', stops: ['#1E3A5F', '#2F5D8A', '#6C9BC8'] },
-  { name: 'Forest', stops: ['#1F4D33', '#2F7A4E', '#6BAA75'] },
-  { name: 'Bone', stops: ['#57534E', '#A8A29E', '#E7E5E4'] },
-  { name: 'Wine', stops: ['#4C0519', '#881337', '#C2546F'] },
+  { name: 'Claude', stops: ['#A8553A', '#D97757', '#EBA285'], meters: ['#D97757', '#5FB3A8', '#9C8AD9'] },
+  { name: 'Ember', stops: ['#7F1D1D', '#B91C1C', '#E05252'], meters: ['#E05252', '#5FB3A8', '#8C9EFF'] },
+  { name: 'Amber', stops: ['#78350F', '#B45309', '#D9A441'], meters: ['#D9A441', '#6C9BC8', '#C2546F'] },
+  { name: 'Harbor', stops: ['#1E3A5F', '#2F5D8A', '#6C9BC8'], meters: ['#6C9BC8', '#5FB3A8', '#B48EAD'] },
+  { name: 'Forest', stops: ['#1F4D33', '#2F7A4E', '#6BAA75'], meters: ['#6BAA75', '#6C9BC8', '#B48EAD'] },
+  { name: 'Bone', stops: ['#57534E', '#A8A29E', '#E7E5E4'], meters: ['#E7E5E4', '#A8A29E', '#78716C'] },
+  { name: 'Wine', stops: ['#4C0519', '#881337', '#C2546F'], meters: ['#C2546F', '#6C9BC8', '#9C8AD9'] },
   // The terminal's own theme colours, for light backgrounds.
-  { name: 'Terminal' },
+  { name: 'Terminal', meters: ['claude', 'suggestion', 'permission'] },
 ]
 
 function themeOf(i: number): Theme {
@@ -144,16 +146,6 @@ function themeOf(i: number): Theme {
 function rgb(c: string): [number, number, number] {
   const h = c.replace('#', '')
   return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)) as [number, number, number]
-}
-
-/** A colour along the theme's shades, 0 dark to 1 light. */
-function shade(t: Theme, k: number): string {
-  if (!t.stops) return 'claude'
-  const x = Math.max(0, Math.min(1, k)) * 2
-  const i = Math.min(1, Math.floor(x))
-  const a = rgb(t.stops[i]!)
-  const b = rgb(t.stops[i + 1]!)
-  return `#${[0, 1, 2].map(j => Math.round(a[j]! + (b[j]! - a[j]!) * (x - i)).toString(16).padStart(2, '0')).join('')}`
 }
 
 const accent = (t: Theme) => (t.stops ? t.stops[1] : 'claude')
@@ -594,7 +586,7 @@ function CtxBar(E: Els, pct: number | undefined, w: number, t: Theme) {
   const { Text } = E
   if (pct === undefined) return <Text dimColor>{'─'.repeat(w)}   –</Text>
   const [on, off] = barText(pct, w)
-  const c = pct >= 60 ? pctColor(pct) : accent(t)
+  const c = pct >= 60 ? pctColor(pct) : t.meters[0]
   return (
     <Text>
       <Text color={c}>{on}</Text>
@@ -773,8 +765,18 @@ function pace(l: HudLimit, at: number): Pace {
 
 const EIGHTHS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
 
-/** A bar in the theme's shades with 1/8-cell precision; amber, then red, as it fills. */
-function Bar(E: Els, pct: number | undefined, w: number, t: Theme) {
+/** A meter's colour, a shade darker toward the bar's start (`k` 0) for a gentle ramp. */
+function ramp(color: string, k: number): string {
+  if (!color.startsWith('#')) return color
+  const c = rgb(color)
+  const f = 0.7 + 0.3 * Math.max(0, Math.min(1, k))
+  return `#${c.map(x => Math.round(x * f).toString(16).padStart(2, '0')).join('')}`
+}
+
+type Meter = 0 | 1 | 2
+
+/** A bar in its meter's colour with 1/8-cell precision; amber, then red, as it fills. */
+function Bar(E: Els, pct: number | undefined, w: number, t: Theme, meter: Meter) {
   const { Text } = E
   const p = Math.max(0, Math.min(100, pct ?? 0))
   const exact = (p / 100) * w
@@ -782,8 +784,8 @@ function Bar(E: Els, pct: number | undefined, w: number, t: Theme) {
   const part = EIGHTHS[Math.floor((exact - full) * 8)] ?? ''
   const hot = p >= 85 ? 'error' : p >= 60 ? 'warning' : undefined
   const cells: RenderChildren[] = []
-  for (let i = 0; i < full; i++) cells.push(<Text color={hot ?? shade(t, w <= 1 ? 0.5 : i / (w - 1))}>█</Text>)
-  if (part) cells.push(<Text color={hot ?? shade(t, full / Math.max(1, w - 1))}>{part}</Text>)
+  for (let i = 0; i < full; i++) cells.push(<Text color={hot ?? ramp(t.meters[meter], w <= 1 ? 1 : i / (w - 1))}>█</Text>)
+  if (part) cells.push(<Text color={hot ?? ramp(t.meters[meter], full / Math.max(1, w - 1))}>{part}</Text>)
   const rest = w - full - (part ? 1 : 0)
   return (
     <Text>
@@ -834,12 +836,12 @@ function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
   const { Box, Text } = E
   const { five, week } = limitsOf(v)
   const barW = cols >= 140 ? 12 : cols >= 110 ? 9 : cols >= 90 ? 6 : 4
-  const gauge = (label: string, pct: number | undefined, suffix: string) => (
+  const gauge = (label: string, pct: number | undefined, suffix: string, meter: Meter) => (
     <Text wrap="truncate-end">
-      <Text bold color={accent(v.t)}>
+      <Text bold color={v.t.meters[meter]}>
         {label}{' '}
       </Text>
-      {Bar(E, pct, barW, v.t)}
+      {Bar(E, pct, barW, v.t, meter)}
       {Pct(E, pct)}
       {suffix ? <Text dimColor> {suffix}</Text> : null}
     </Text>
@@ -852,9 +854,9 @@ function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
   return (
     <Box flexDirection="row" justifyContent="space-between" gap={2}>
       <Box flexDirection="row" gap={3} flexShrink={1}>
-        {gauge('CTX', v.u?.ctxPercent, ctx)}
-        {gauge('5H', five?.percentUsed, reset(five))}
-        {cols >= 80 ? gauge('7D', week?.percentUsed, reset(week)) : null}
+        {gauge('CTX', v.u?.ctxPercent, ctx, 0)}
+        {gauge('5H', five?.percentUsed, reset(five), 1)}
+        {cols >= 80 ? gauge('7D', week?.percentUsed, reset(week), 2) : null}
       </Box>
       {UsageButtons(E, v, $, cols, 'band')}
     </Box>
@@ -895,13 +897,15 @@ function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderC
   const { five, week, others } = limitsOf(v)
   const labelW = 9
   const indent = v.open ? 2 : 0
-  const row = (label: string, pct: number | undefined, right: string) => {
+  const row = (label: string, pct: number | undefined, right: string, meter: Meter) => {
     const barW = Math.max(4, Math.min(32, cols - indent - labelW - 4 - (right ? right.length + 2 : 0)))
     return (
       <Text key={`use-${label}`} wrap="truncate-end">
         <Text>{' '.repeat(indent)}</Text>
-        <Text bold>{label.padEnd(labelW)}</Text>
-        {Bar(E, pct, barW, v.t)}
+        <Text bold color={v.t.meters[meter]}>
+          {label.padEnd(labelW)}
+        </Text>
+        {Bar(E, pct, barW, v.t, meter)}
         {Pct(E, pct)}
         {right ? <Text dimColor>  {right}</Text> : null}
       </Text>
@@ -915,7 +919,7 @@ function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderC
   const tokens = v.u?.ctxTokens !== undefined ? `${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : ''
   const limits: RenderChildren[] = []
   const limit = (label: string, l: HudLimit | undefined, withDay: boolean) => {
-    limits.push(row(label, l?.percentUsed, resetText(l, v.at, withDay)))
+    limits.push(row(label, l?.percentUsed, resetText(l, v.at, withDay), l?.kind === 'five_hour' || label === '5-hour' ? 1 : 2))
     const pl = v.open && l ? PaceLine(E, l, v.at, indent + labelW) : null
     if (pl) limits.push(pl)
   }
@@ -923,7 +927,7 @@ function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderC
   limit('Weekly', week, true)
   for (const l of others) limit(LIMIT_LABEL[l.kind] ?? l.kind, l, true)
   const none = !five && !week ? [<Text dimColor>{' '.repeat(indent)}Plan limits arrive with the next response.</Text>] : []
-  if (!v.open) return [row('Context', v.u?.ctxPercent, tokens), ...limits, ...none]
+  if (!v.open) return [row('Context', v.u?.ctxPercent, tokens, 0), ...limits, ...none]
 
   const cats = (v.b?.categories ?? []).filter(c => c.tokens > 0).sort((a, b) => b.tokens - a.tokens)
   const catMax = Math.max(1, ...cats.map(c => c.tokens))
@@ -932,7 +936,7 @@ function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderC
   const ctxRight = [tokens, compact].filter(Boolean).join(' · ')
   return [
     ...(where === 'panel' ? [head('CONTEXT WINDOW')] : []),
-    row('Context', v.u?.ctxPercent, cols >= 60 ? ctxRight : tokens),
+    row('Context', v.u?.ctxPercent, cols >= 60 ? ctxRight : tokens, 0),
     ...(cols < 60 && compact ? [<Text key="compact-at" dimColor>{' '.repeat(indent + labelW)}{compact}</Text>] : []),
     ...(cats.length === 0 ? [<Text dimColor>{' '.repeat(indent + 2)}Measuring what fills the window…</Text>] : []),
     ...cats.map((c, i) => {
@@ -940,7 +944,7 @@ function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderC
       return (
         <Text key={`cat-${c.name}`} wrap="truncate-end">
           <Text>{' '.repeat(indent + 2)}</Text>
-          <Text color={shade(v.t, 1 - (i % 3) / 2)}>{'▮'.repeat(n)}</Text>
+          <Text color={ramp(v.t.meters[0], 1 - (i % 3) / 3)}>{'▮'.repeat(n)}</Text>
           <Text dimColor>{'▮'.repeat(catW - n)}</Text>
           <Text> {fmtTokens(c.tokens).padStart(5)} </Text>
           <Text dimColor>{c.name}</Text>
@@ -1413,7 +1417,8 @@ export const register: Register = on => {
     const { Box, Button, Text } = E
     const [seen, moving] = await Promise.all([view($, e.surface), read($, motion)])
     const base = { ...seen, f: moving ? await read($, frame) : 0 }
-    const cols = Math.max(24, e.props.bodyColumns)
+    // One column of gutter off the divider the engine draws against the chat.
+    const cols = Math.max(24, e.props.bodyColumns - GUTTER)
     const branch = base.isLanes ? 'orchestrator' : (base.l.repo?.split('/').pop() ?? 'main')
     const budget = e.props.scroll.bodyRows
     let v = base
@@ -1460,7 +1465,7 @@ export const register: Register = on => {
     return (
       // A docked pane's body doesn't size its tree, so "100%" would collapse to the
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
-      <Box flexDirection="column" height={e.props.placement === 'dock' ? budget : undefined}>
+      <Box flexDirection="column" paddingLeft={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
         {Header(E, v, cols)}
         {mainCard(E, v, cols, branch)}
         {paging.active ? more(above, -1) : null}
