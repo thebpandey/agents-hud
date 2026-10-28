@@ -35,9 +35,16 @@ export type HudUsage = {
   model?: string
 }
 
+export type HudCategory = { name: string; tokens: number }
+
+/** What fills the context window, as /context breaks it down. */
+export type HudBreakdown = { categories: HudCategory[]; autoCompactAt?: number; isAutoCompact: boolean }
+
 export type HudLane = { lane: string; agent: string; task: string; worktree: string; relay: string }
 
 export type HudLanes = { repo?: string; dir?: string; rows: HudLane[] }
+
+export type HudPlacement = 'panel' | 'band'
 
 export type HudMode = 'auto' | 'agents' | 'lanes'
 
@@ -68,6 +75,21 @@ declare module 'claude-code' {
       now: number
       /** Body rows scrolled past while the cards outgrow the panel. */
       skip: number
+      /** The band above the prompt shows the context breakdown and plan pace. */
+      expanded: boolean
+      breakdown: HudBreakdown | null
+      /** Index into THEMES; also kept in the store for new sessions. */
+      theme: number
+      /** The avatar style's name, a key of AVATARS; also kept in the store. */
+      avatars: string
+      /** Where the usage figures and their settings show. */
+      placement: HudPlacement
+      /** Lanes with nothing in this session are listed, not folded into one row. */
+      showIdle: boolean
+      /** The avatars' animation frame, advanced while something works. */
+      frame: number
+      /** Whether avatars move at all; kept in the store. */
+      motion: boolean
     }
   }
 }
