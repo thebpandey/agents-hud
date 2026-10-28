@@ -1,0 +1,6 @@
+{
+  "name": "agents-hud",
+  "version": "0.1.0",
+  "description": "A side panel listing this session's agents, grouped by lane while /lanes runs, with context, 5-hour and weekly usage at the bottom.",
+  "types": "./types/index.d.ts"
+}
