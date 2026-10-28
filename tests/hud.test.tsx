@@ -75,6 +75,7 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0) {
       { id: 'a1', description: 'a1-auth: auth refactor', type: 'sonnet-lane', status: 'running', name: 'auth-coder' },
       { id: 'a2', description: 'look for usages', type: 'Explore', status: 'completed' },
       { id: 'a3', description: 'docs pass', type: 'glm', status: 'running' },
+      { id: 'a4', description: 'Review lane a1-auth', type: 'lane-reviewer', status: 'running' },
     ],
   }))
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
@@ -166,7 +167,14 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     expect(await ui.find({ type: 'Text', text: /Lanes · proj/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /a1-auth/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /⎇ lane-a1/ })).toBeTruthy()
+    // Under its lane a card names the agent and its task, not the lane or worktree again.
+    expect(await ui.find({ type: 'Text', text: /⎇ lane-a1/ })).toBeFalsy()
+    // A reviewer whose brief names only the lane is grouped under it too.
+    const order = (await ui.findAll({ type: 'Text' })).map(x => x.text)
+    const reviewAt = order.findIndex(x => /^ Review/.test(x))
+    const otherAt = order.findIndex(x => /^Other agents$/.test(x))
+    expect(reviewAt).toBeGreaterThan(-1)
+    expect(otherAt === -1 || reviewAt < otherAt).toBe(true)
     expect(await ui.find({ type: 'Text', text: /DeepSeek V4\.1 Flash/ })).toBeTruthy()
     // Under its own lane, an agent's description drops the lane-name prefix.
     expect(await ui.find({ type: 'Text', text: /^ auth r/ })).toBeTruthy()

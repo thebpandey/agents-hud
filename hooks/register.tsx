@@ -423,14 +423,22 @@ async function refreshLanes($: EngineInterface) {
 }
 
 function laneOf(a: HudAgent, rows: HudLane[]): HudLane | undefined {
+  // A brief that names the worktree or the lane's state folder is surest; one that
+  // only names the lane (a reviewer's "lane lx-statements") counts after those.
   let best: HudLane | undefined
+  let score = 0
+  const text = `${a.hint}\n${a.description}`
   for (const r of rows) {
     const rel = r.worktree.split('/.claude/worktrees/')[1]
-    const hit =
-      (r.worktree && a.hint.includes(r.worktree)) ||
-      (rel && a.hint.includes(`worktrees/${rel}`)) ||
-      a.hint.includes(`/lanes/${r.lane}/`)
-    if (hit && (!best || r.worktree.length > best.worktree.length)) best = r
+    const byPath =
+      (r.worktree && a.hint.includes(r.worktree)) || (rel && a.hint.includes(`worktrees/${rel}`)) || a.hint.includes(`/lanes/${r.lane}/`)
+    const bare = r.lane.replace(/^lane-/, '')
+    const byName = bare.length >= 6 && new RegExp(`(^|[^\\w.-])(lane-)?${bare.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\w-])`).test(text)
+    const s = byPath ? 1000 + r.worktree.length : byName ? bare.length : 0
+    if (s > score) {
+      best = r
+      score = s
+    }
   }
   return best
 }
@@ -514,7 +522,7 @@ function isShadowed(j: HudJob, ag: HudAgent[]): boolean {
   return ag.some(a => a.type === j.engine && a.hint.includes(j.cwd) && Math.abs(a.startedAt - j.startedAt) < 15 * 60_000)
 }
 
-function jobCard(E: Els, v: View, j: HudJob, cols: number): RenderChildren {
+function jobCard(E: Els, v: View, j: HudJob, cols: number, underLane = false): RenderChildren {
   const st =
     j.status === 'running'
       ? { icon: '⚡', label: j.kind === 'review' ? 'Reviewing' : 'Running', color: 'success' }
@@ -532,10 +540,11 @@ function jobCard(E: Els, v: View, j: HudJob, cols: number): RenderChildren {
       id: j.id,
       isMain: false,
       nick: v.nick.get(j.id) ?? j.engine,
-      title: j.lane || j.engine,
-      branch: j.cwd.split('/').pop() ?? '',
+      // Under its lane the lane and worktree go without saying: say what the job does.
+      title: underLane ? role : j.lane || j.engine,
+      branch: underLane ? '' : (j.cwd.split('/').pop() ?? ''),
       st,
-      extra: `${role}  ${j.status === 'running' ? dur : `${dur} · ${fmtDur(v.at - (j.endedAt ?? j.startedAt))} ago`}`,
+      extra: `${underLane ? '' : `${role}  `}${j.status === 'running' ? dur : `${dur} · ${fmtDur(v.at - (j.endedAt ?? j.startedAt))} ago`}`,
       model: j.model,
       noCtx: true,
       motion: j.status === 'running' ? 'running' : 'still',
@@ -641,12 +650,12 @@ function Card(E: Els, v: View, d: CardData, cols: number) {
   const nick = cut(d.nick, Math.max(4, left - 8))
   const free = left - nick.length
   const descNeed = d.title ? d.title.length + 1 : 0
-  const branchNeed = d.branch.length + 3
+  const branchNeed = d.branch ? d.branch.length + 3 : 0
   const branchW = branchNeed + descNeed <= free ? branchNeed : Math.min(branchNeed, Math.max(Math.floor(free * 0.55), free - descNeed))
   const descW = free - branchW
   const rest = d.title && descW > 2 ? ` ${cut(d.title, descW - 1)}` : ''
   const branch = cut(d.branch, Math.max(2, branchW - 3))
-  const label = [<Text bold>{nick}</Text>, <Text>{rest}</Text>, <Text dimColor> ⎇ {branch}</Text>]
+  const label = [<Text bold>{nick}</Text>, <Text>{rest}</Text>, d.branch ? <Text dimColor> ⎇ {branch}</Text> : null]
   const head = d.onPress ? (
     <Button key={`view-${d.id}`} plain onPress={d.onPress}>
       {label}
@@ -1066,11 +1075,21 @@ function Header(E: Els, v: View, cols: number) {
 
 type Item = { node: RenderChildren; rows: number }
 
-function Indent(E: Els, key: string, node: RenderChildren): RenderChildren {
-  const { Box } = E
+/** A lane's card, set in from the lane's header with a rail down its left that ties it to the lane. */
+function Indent(E: Els, key: string, node: RenderChildren, rows: number, live: boolean): RenderChildren {
+  const { Box, Text } = E
   return (
-    <Box key={key} paddingLeft={2}>
-      {node}
+    <Box key={key} flexDirection="row">
+      <Box flexDirection="column" width={2} flexShrink={0}>
+        {Array.from({ length: rows }, (_, i) => (
+          <Text key={`rail-${i}`} color={live ? 'success' : 'subtle'}>
+            {'│'}
+          </Text>
+        ))}
+      </Box>
+      <Box flexDirection="column" flexGrow={1}>
+        {node}
+      </Box>
     </Box>
   )
 }
@@ -1142,9 +1161,8 @@ function laneItems(E: Els, v: View, cols: number, $: EngineInterface): Item[] {
       })
       continue
     }
-    const wt = r.worktree.split('/').pop() ?? r.lane
-    for (const a of list) out.push({ rows: card, node: Indent(E, `in-${a.id}`, agentCard(E, v, a, cols - 2, $, wt, r.lane)) })
-    for (const j of laneJobs) out.push({ rows: card, node: Indent(E, `in-${j.id}`, jobCard(E, v, j, cols - 2)) })
+    for (const a of list) out.push({ rows: card, node: Indent(E, `in-${a.id}`, agentCard(E, v, a, cols - 2, $, '', r.lane), card, live > 0) })
+    for (const j of laneJobs) out.push({ rows: card, node: Indent(E, `in-${j.id}`, jobCard(E, v, j, cols - 2, true), card, live > 0) })
     if (v.density !== 0) out.push({ rows: 1, node: <Text key={`gap-${r.lane}`}> </Text> })
   }
   if (idle.length) {
