@@ -50,6 +50,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.10`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.

@@ -85,7 +85,7 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0) {
     const job = ['model-relay.abc123', 'deepseek', '', '', WT, '', '', String(t - 60), '', '1'].join('\t')
     return { value: { exitCode: 0, stdout: isScan ? `${job}\n` : `${REPO}/.git\n`, stderr: '' } }
   })
-  on('fs.read', () => ({ value: `lane\tagent\ttask\tworktree\trelay\n${IDLE}a1-auth\tSonnet 5.5 (T2)\tAuth refactor\t.claude/worktrees/lane-a1-auth\tagent\n` }))
+  on('fs.read', (_, e) => e.path.endsWith('/.claude-plugin/plugin.json') ? { value: '{"name":"agents-hud","version":"9.8.7"}' } : ({ value: `lane\tagent\ttask\tworktree\trelay\n${IDLE}a1-auth\tSonnet 5.5 (T2)\tAuth refactor\t.claude/worktrees/lane-a1-auth\tagent\n` }))
   on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: 'a1' }))
   on('tool.call', () => ({ result: {} }))
   return clock
@@ -99,6 +99,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
 
     expect(await ui.find({ type: 'Text', text: /auth-coder/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /This session/ })).toBeTruthy()
+    // The header names the mod and the version its manifest declares, so a stale install is visible at a glance.
+    expect(await ui.find({ type: 'Text', text: /^Agents HUD v9\.8\.7$/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /GLM 5\.3 Flash/ })).toBeTruthy()
     // An agent with no name of its own gets a robot name before its description.
     expect(await ui.find({ type: 'Text', text: /^[A-Z][a-z]+$/ })).toBeTruthy()
@@ -165,7 +167,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     // Avatars: half-block pixels on the terminal, SVG pixels on desktop.
     expect(await ui.find({ type: surface === 'terminal' ? 'Raster' : 'Svg' })).toBeTruthy()
 
-    expect(await ui.find({ type: 'Text', text: /Lanes · proj/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /proj · \d+ lanes/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /a1-auth/ })).toBeTruthy()
     // Under its lane a card names the agent and its task, not the lane or worktree again.
     expect(await ui.find({ type: 'Text', text: /⎇ lane-a1/ })).toBeFalsy()

@@ -29,6 +29,19 @@ const placement = atom({ plugin: 'agents-hud', key: 'placement' } as const, INIT
 
 const PANE = 'agents-hud'
 const TITLE = 'Agents'
+
+// Read from the manifest once per load, so the header can't drift from the release.
+let manifestVersion: Promise<string | undefined> | undefined
+function pluginVersion($: EngineInterface): Promise<string | undefined> {
+  manifestVersion ??= $.fs
+    .read(`${$.plugin.root}/.claude-plugin/plugin.json`)
+    .then(text => {
+      const m: unknown = JSON.parse(text)
+      return typeof m === 'object' && m !== null && 'version' in m && typeof m.version === 'string' ? m.version : undefined
+    })
+    .catch(() => undefined)
+  return manifestVersion
+}
 const TICK_MS = 2000
 const ANIM_MS = 450
 const GUTTER = 1
@@ -1074,11 +1087,13 @@ async function toggleBand($: EngineInterface, columns = 100) {
   if (open) await refreshBreakdown($, columns).catch(() => undefined)
 }
 
-function Header(E: Els, v: View, cols: number) {
+function Header(E: Els, v: View, cols: number, version: string | undefined) {
   const { Box, Text } = E
   const running = v.ag.filter(a => LIVE.has(a.status)).length + v.jobs.filter(j => j.status === 'running' && !isShadowed(j, v.ag)).length
-  const label = v.isLanes ? `Lanes · ${v.l.repo?.split('/').pop() ?? '?'}` : 'Agents'
-  const count = v.isLanes ? `${v.l.rows.length} lanes · ${running} running` : `${v.ag.length} · ${running} running`
+  const label = version ? `Agents HUD v${version}` : 'Agents HUD'
+  const count = v.isLanes
+    ? `${v.l.repo?.split('/').pop() ?? '?'} · ${v.l.rows.length} lanes · ${running} running`
+    : `${v.ag.length} · ${running} running`
   return (
     <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
       <Text bold color={accent(v.t)}>
@@ -1507,7 +1522,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const E = $.ui.resolve(e)
     const { Box, Button, Text } = E
-    const [seen, moving] = await Promise.all([view($, e.surface), read($, motion)])
+    const [seen, moving, version] = await Promise.all([view($, e.surface), read($, motion), pluginVersion($)])
     const base = { ...seen, f: moving ? await read($, frame) : 0 }
     // One column of gutter off the divider the engine draws against the chat.
     const cols = Math.max(24, e.props.bodyColumns - GUTTER)
@@ -1558,7 +1573,7 @@ export const register: Register = on => {
       // A docked pane's body doesn't size its tree, so "100%" would collapse to the
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
       <Box flexDirection="column" paddingLeft={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
-        {Header(E, v, cols)}
+        {Header(E, v, cols, version)}
         {mainCard(E, v, cols, branch)}
         {paging.active ? more(above, -1) : null}
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
