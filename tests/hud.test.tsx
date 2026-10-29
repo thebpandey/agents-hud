@@ -434,3 +434,14 @@ test('a finished agent stays while listed, and leaves 10 minutes after the engin
   expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeFalsy()
   await ui.unmount()
 })
+
+// A reload of unchanged code rebuilds the module, cancelling its timers, without a new
+// session.start: drawn after that, the panel must still refresh itself, not freeze.
+test('a panel drawn without session.start, as after a reload, still refreshes on its own', async ($, on) => {
+  const clock = engine(on)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeFalsy()
+  await clock.advance(11_000)
+  expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeTruthy()
+  await ui.unmount()
+})

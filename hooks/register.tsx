@@ -1497,15 +1497,59 @@ async function markLanes($: EngineInterface) {
   await refreshLanes($).catch(() => undefined)
 }
 
+// The refresh and animation timers. Module state: a reload rebuilds it, cancelling them.
+const timers: { ticker?: { cancel: () => void }; animator?: { cancel: () => void }; ticks: number } = { ticks: 0 }
+
+// Timer failures go to the debug log (claude --debug), not the screen: one every two
+// seconds would bury the chat, and swallowing them hid a frozen panel before.
+function logFailure($: EngineInterface, what: string): (err: unknown) => void {
+  return err => $.ui.log(`agents-hud: ${what} failed: ${err instanceof Error ? err.message : String(err)}`, { to: 'debug' })
+}
+
+function startTimers($: EngineInterface) {
+  timers.ticker?.cancel()
+  timers.ticker = $.clock.every(TICK_MS, () => {
+    timers.ticks += 1
+    void (async () => {
+      const at = await $.clock.now()
+      const [ag, m] = await Promise.all([read($, agents), read($, main)])
+      const isBusy = m.working || ag.some(a => LIVE.has(a.status))
+      if (isBusy || timers.ticks % 5 === 0) {
+        await update($, now, () => at)
+        await refreshAgents($, at)
+      }
+      if (timers.ticks % 5 === 0) await refreshLanes($)
+      const jb = await read($, jobs)
+      if (timers.ticks % (jb.some(j => j.status === 'running') ? 5 : 15) === 0) await refreshJobs($)
+      if (timers.ticks % 15 === 0) await refreshUsage($)
+    })().catch(logFailure($, 'refresh'))
+  })
+
+  // The avatars' frames: advanced only while something works, so a resting panel never redraws.
+  timers.animator?.cancel()
+  timers.animator = $.clock.every(ANIM_MS, () => {
+    void (async () => {
+      const [ag, m, jb, moving] = await Promise.all([read($, agents), read($, main), read($, jobs), read($, motion)])
+      if (moving && (m.working || ag.some(a => LIVE.has(a.status)) || jb.some(j => j.status === 'running'))) {
+        await update($, frame, f => (f + 1) % 10_000)
+      }
+    })().catch(logFailure($, 'animation'))
+  })
+}
+
+// A reload of unchanged code can rebuild the module, cancelling its timers, without
+// running session.start again: whatever draws or hears the session restarts them.
+function ensureTimers($: EngineInterface) {
+  if (!timers.ticker || !timers.animator) startTimers($)
+}
+
 export const register: Register = on => {
-  let ticker: { cancel: () => void } | undefined
-  let animator: { cancel: () => void } | undefined
   // Opened unasked at session start, a pane is only placed from 144 columns, which
   // a desktop window measured in code-font cells seldom reaches. A prompt counts as
   // asking, so on a remote surface the first one opens it: unless the person closed it.
   let closedByPerson = false
   let triedOnPrompt = false
-  let ticks = 0
+
 
   on('session.start', async ($, e, next) => {
     const result = await next(e)
@@ -1526,40 +1570,14 @@ export const register: Register = on => {
     await refreshJobs($).catch(() => undefined)
     void $.ui.open({ id: PANE, title: TITLE })
 
-    ticker?.cancel()
-    ticker = $.clock.every(TICK_MS, () => {
-      ticks += 1
-      void (async () => {
-        const at = await $.clock.now()
-        const [ag, m] = await Promise.all([read($, agents), read($, main)])
-        const isBusy = m.working || ag.some(a => LIVE.has(a.status))
-        if (isBusy || ticks % 5 === 0) {
-          await update($, now, () => at)
-          await refreshAgents($, at)
-        }
-        if (ticks % 5 === 0) await refreshLanes($)
-        const jb = await read($, jobs)
-        if (ticks % (jb.some(j => j.status === 'running') ? 5 : 15) === 0) await refreshJobs($)
-        if (ticks % 15 === 0) await refreshUsage($)
-      })().catch(() => undefined)
-    })
-
-    // The avatars' frames: advanced only while something works, so a resting panel never redraws.
-    animator?.cancel()
-    animator = $.clock.every(ANIM_MS, () => {
-      void (async () => {
-        const [ag, m, jb, moving] = await Promise.all([read($, agents), read($, main), read($, jobs), read($, motion)])
-        if (moving && (m.working || ag.some(a => LIVE.has(a.status)) || jb.some(j => j.status === 'running'))) {
-          await update($, frame, f => (f + 1) % 10_000)
-        }
-      })().catch(() => undefined)
-    })
+    startTimers($)
     return result
   })
 
   on('session.end', async ($, e, next) => {
-    ticker?.cancel()
-    animator?.cancel()
+    timers.ticker?.cancel()
+    timers.animator?.cancel()
+    timers.ticker = timers.animator = undefined
     return next(e)
   })
 
@@ -1691,6 +1709,7 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    ensureTimers($)
     const at = await $.clock.now()
     if (e.agentId) {
       await setActivity($, e.agentId, 'idle')
@@ -1711,6 +1730,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    ensureTimers($)
     if (e.props.hasSurvey || (await read($, placement)) !== 'band') return next(e)
     const E = $.ui.resolve(e)
     const v = await view($, e.surface)
@@ -1730,6 +1750,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    ensureTimers($)
     const E = $.ui.resolve(e)
     const { Box } = E
     const [seen, moving, version] = await Promise.all([view($, e.surface), read($, motion), pluginVersion($)])

@@ -50,7 +50,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
-- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.15`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.16`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active. A finished agent stays as long as Claude Code still lists it, and leaves the panel 10 minutes after Claude Code stops listing it. A finished relay or Codex job leaves 10 minutes after it ends.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
@@ -120,6 +120,7 @@ claude plugin uninstall agents-hud
 - **No panel in the desktop app:** send a prompt, or run `/agents-hud`. If you closed the panel earlier in the session, only `/agents-hud` reopens it.
 - **A second list of agents under the prompt:** that's Claude Code's own background-task list, not this mod. Press `ctrl+t` to hide or show it.
 - **An agent is under "Direct agents" instead of its lane:** the panel matches an agent to a lane when its brief names the lane's worktree path, its lane folder, or the lane by name. Mention one of those in the agent's brief.
+- **The panel stops updating:** its refresh restarts the next time the panel draws or a turn ends, so send a prompt. If it stays frozen, start Claude Code with `claude --debug`: a failing refresh is logged there as `agents-hud: refresh failed: ...`.
 - **No 5-hour or weekly bars:** plan limits arrive with Claude's next response. Until then the panel shows "Plan limits arrive with the next response."
 
 ## How it works
