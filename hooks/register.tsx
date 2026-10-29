@@ -45,7 +45,9 @@ function pluginVersion($: EngineInterface): Promise<string | undefined> {
 const TICK_MS = 2000
 const ANIM_MS = 450
 const GUTTER = 1
-const KEEP_DONE_MS = 30 * 60_000
+// How long the panel keeps an agent after the engine stops listing it, or a job after it
+// ends. An agent the engine still lists stays while it does.
+const KEEP_DONE_MS = 10 * 60_000
 const LIVE = new Set(['pending', 'running', 'waiting'])
 
 type Els = ReturnType<EngineInterface['ui']['resolve']>
@@ -380,11 +382,16 @@ async function refreshAgents($: EngineInterface, at: number) {
         hint: old?.hint ?? '',
       })
     }
-    // the engine drops finished agents after a while: keep them a little longer
+    // The engine drops a finished agent after a while: keep it KEEP_DONE_MS from then.
     for (const a of prev) {
       if (seen.has(a.id)) continue
-      if (at - a.updatedAt > KEEP_DONE_MS) continue
-      out.push(LIVE.has(a.status) ? { ...a, status: 'completed', activity: 'idle', tool: undefined, updatedAt: at } : a)
+      const unlistedAt = a.unlistedAt ?? at
+      if (at - unlistedAt > KEEP_DONE_MS) continue
+      out.push(
+        LIVE.has(a.status)
+          ? { ...a, status: 'completed', activity: 'idle', tool: undefined, updatedAt: at, unlistedAt }
+          : { ...a, unlistedAt },
+      )
     }
     return JSON.stringify(out) === JSON.stringify(prev) ? prev : out
   })

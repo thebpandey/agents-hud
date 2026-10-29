@@ -15,6 +15,8 @@ export type HudAgent = {
   updatedAt: number
   /** The spawn prompt's start and cwd, matched against lane worktrees. */
   hint: string
+  /** When the engine stopped listing it; absent while it is listed. */
+  unlistedAt?: number
 }
 
 export type HudMain = {

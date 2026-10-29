@@ -34,7 +34,7 @@ const IDLE = IDLE_FIRST.map(l => `${l}\tDeepSeek\told task\t.claude/worktrees/la
 const WT = `${REPO}/.claude/worktrees/lane-a1-auth`
 
 // Each hook here stands for the engine.
-function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0, longDesc = '') {
+function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0, longDesc = '', unlisted: Set<string> = new Set()) {
   const clock = mock.clock(on)
   on('command.register', () => ({ value: { command: 'agents-hud' } }))
   on('ui.open', () => (opened.count++, { value: { isPlaced: true } }))
@@ -77,11 +77,11 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraC
     value: crowd
       ? Array.from({ length: crowd }, (_, i) => ({ id: `c${i}`, description: `task ${i}`, type: 'sonnet-lane', status: 'running' }))
       : [
-      { id: 'a1', description: 'a1-auth: auth refactor', type: 'sonnet-lane', status: 'running', name: 'auth-coder' },
-      { id: 'a2', description: longDesc || 'look for usages', type: 'Explore', status: 'completed' },
-      { id: 'a3', description: 'docs pass', type: 'glm', status: 'running' },
-      { id: 'a4', description: 'Review lane a1-auth', type: 'lane-reviewer', status: 'running' },
-    ],
+      { id: 'a1', description: 'a1-auth: auth refactor', type: 'sonnet-lane', status: 'running' as const, name: 'auth-coder' },
+      { id: 'a2', description: longDesc || 'look for usages', type: 'Explore', status: 'completed' as const },
+      { id: 'a3', description: 'docs pass', type: 'glm', status: 'running' as const },
+      { id: 'a4', description: 'Review lane a1-auth', type: 'lane-reviewer', status: 'running' as const },
+    ].filter(a => !unlisted.has(a.id)),
   }))
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
   on('process.run', (_, e) => {
@@ -417,3 +417,20 @@ for (const [bodyColumns, weekly] of [
     await ui.unmount()
   })
 }
+
+// Finished work lingering half an hour crowded the panel. An agent the engine still lists
+// stays however long ago it finished; once the engine stops listing it, it goes 10 minutes later.
+test('a finished agent stays while listed, and leaves 10 minutes after the engine stops listing it', { timeoutMs: 120_000 }, async ($, on) => {
+  const unlisted = new Set<string>()
+  const clock = engine(on, 0, 0, '', unlisted)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await clock.advance(12 * 60_000)
+  expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeTruthy()
+  unlisted.add('a2')
+  await clock.advance(9 * 60_000)
+  expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeTruthy()
+  await clock.advance(2 * 60_000)
+  expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeFalsy()
+  await ui.unmount()
+})

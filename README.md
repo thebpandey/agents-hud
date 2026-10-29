@@ -51,7 +51,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 ### What you see
 
 - **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.15`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
-- **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active.
+- **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active. A finished agent stays as long as Claude Code still lists it, and leaves the panel 10 minutes after Claude Code stops listing it. A finished relay or Codex job leaves 10 minutes after it ends.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
 - **Avatars move while their agent works** and stand still once it's idle or done.
