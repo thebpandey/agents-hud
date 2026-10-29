@@ -680,16 +680,21 @@ function Card(E: Els, v: View, d: CardData, cols: number) {
       <Box flexDirection="column" flexGrow={1}>
         <Box flexDirection="row" justifyContent="space-between">
           <Box flexShrink={1}>{head}</Box>
-          {d.noCtx ? <Text dimColor>external</Text> : CtxBar(E, d.pct, barW, v.t)}
+          {/* Rigid: under a long name the name gives way, never the bar or its percentage. */}
+          <Box flexShrink={0}>{d.noCtx ? <Text dimColor>external</Text> : CtxBar(E, d.pct, barW, v.t)}</Box>
         </Box>
         <Box flexDirection="row" justifyContent="space-between">
-          <Text wrap="truncate-end">
-            <Text color={d.st.color}>
-              {d.st.icon} {cut(d.st.label, 22)}
+          <Box flexShrink={1}>
+            <Text wrap="truncate-end">
+              <Text color={d.st.color}>
+                {d.st.icon} {cut(d.st.label, 22)}
+              </Text>
+              {d.extra ? <Text dimColor>  {d.extra}</Text> : null}
             </Text>
-            {d.extra ? <Text dimColor>  {d.extra}</Text> : null}
-          </Text>
-          <Text dimColor>{d.model}</Text>
+          </Box>
+          <Box flexShrink={0} marginLeft={1}>
+            <Text dimColor>{d.model}</Text>
+          </Box>
         </Box>
       </Box>
     </Box>
@@ -849,7 +854,7 @@ function UsageButtons(E: Els, v: View, $: EngineInterface, cols: number, where: 
   const isOpen = v.open
   return (
     <Box flexDirection="row" gap={2} flexShrink={0}>
-      <Button key="hud-more" plain label={isOpen ? '▴ less' : '▾ more'} onPress={() => void toggleBand($, cols)} />
+      <Button key="hud-more" plain label={isOpen ? '▾ less' : '▴ more'} onPress={() => void toggleBand($, cols)} />
       <Button key="hud-theme" plain label={`🎨 ${v.t.name}`} onPress={() => void nextTheme($)} />
       {where === 'panel' || cols >= 90 ? <Button key="hud-avatars" plain label={`☺ ${v.style}`} onPress={() => void nextAvatars($)} /> : null}
       {where === 'band' ? <Button key="hud-panel" plain label="◫ panel" onPress={() => void togglePanel($)} /> : null}

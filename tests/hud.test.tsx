@@ -126,7 +126,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
     const labels = await Promise.all(['Context', '5-hour', 'Weekly'].map(l => ui.find({ type: 'Text', text: new RegExp(`^${l} +$`) })))
     expect(new Set(labels.map(x => x?.props.color)).size).toBe(3)
 
+    // The detail opens upward, above the bars: "more" points up, "less" back down.
+    expect(await ui.find({ type: 'Button', label: /^▴ more$/ })).toBeTruthy()
     await ui.press({ key: 'hud-more' })
+    expect(await ui.find({ type: 'Button', label: /^▾ less$/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /CONTEXT WINDOW/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /30k Messages/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /autocompact at 187k/ })).toBeTruthy()
