@@ -848,9 +848,11 @@ function Pct(E: Els, pct: number | undefined) {
   )
 }
 
-function resetText(l: HudLimit | undefined, at: number, withDay: boolean): string {
+/** `↻ 3h 56m · 6:30 PM`, or with `short` the countdown alone. */
+function resetText(l: HudLimit | undefined, at: number, withDay: boolean, short = false): string {
   const t = l?.resetsAt ? Date.parse(l.resetsAt) : NaN
-  return Number.isFinite(t) ? `↻ ${fmtDur(t - at)} · ${fmtClock(t, withDay)}` : ''
+  if (!Number.isFinite(t)) return ''
+  return short ? `↻ ${fmtDur(t - at)}` : `↻ ${fmtDur(t - at)} · ${fmtClock(t, withDay)}`
 }
 
 function limitsOf(v: View) {
@@ -935,9 +937,13 @@ function whenText(t: number, at: number): string {
 const LABEL_W = 9
 
 /** One meter row: its label, the bar, the percentage, then dim figures on the right. */
-function usageRow(E: Els, v: View, label: string, pct: number | undefined, right: string, meter: Meter, cols: number, indent: number) {
+/** The bar's length with `right` beside it; rows that pass one `barW` line up. */
+function rowBarW(cols: number, indent: number, right: string): number {
+  return Math.max(4, Math.min(32, cols - indent - LABEL_W - 4 - (right ? right.length + 2 : 0)))
+}
+
+function usageRow(E: Els, v: View, label: string, pct: number | undefined, right: string, meter: Meter, cols: number, indent: number, barW = rowBarW(cols, indent, right)) {
   const { Text } = E
-  const barW = Math.max(4, Math.min(32, cols - indent - LABEL_W - 4 - (right ? right.length + 2 : 0)))
   return (
     <Text key={`use-${label}`} wrap="truncate-end">
       <Text>{' '.repeat(indent)}</Text>
@@ -960,14 +966,29 @@ function usageHead(E: Els, v: View, label: string) {
   )
 }
 
-/** The plan limits, a pace line under each when `withPace`; a note while none have arrived. */
-function limitLines(E: Els, v: View, cols: number, indent: number, withPace: boolean): RenderChildren[] {
+type LimitsLayout =
+  /** The "more" view: each reset on the line under its bar, then its pace line when `withPace`. */
+  | { detail: true; withPace: boolean }
+  /** The bars alone: the reset beside each bar, every bar `barW` long, the reset `short` to leave it room. */
+  | { detail: false; barW: number; short: boolean }
+
+/** The plan limits; a note while none have arrived. */
+function limitLines(E: Els, v: View, cols: number, indent: number, lay: LimitsLayout): RenderChildren[] {
   const { Text } = E
   const { five, week, others } = limitsOf(v)
   const out: RenderChildren[] = []
   const limit = (label: string, l: HudLimit | undefined, withDay: boolean, meter: Meter) => {
-    out.push(usageRow(E, v, label, l?.percentUsed, resetText(l, v.at, withDay), meter, cols, indent))
-    const pl = withPace && l ? PaceLine(E, l, v.at, indent + LABEL_W) : null
+    const reset = resetText(l, v.at, withDay, !lay.detail && lay.short)
+    out.push(usageRow(E, v, label, l?.percentUsed, lay.detail ? '' : reset, meter, cols, indent, lay.detail ? undefined : lay.barW))
+    if (lay.detail && reset) {
+      out.push(
+        <Text key={`reset-${label}`} dimColor wrap="truncate-end">
+          {' '.repeat(indent + LABEL_W)}
+          {reset}
+        </Text>,
+      )
+    }
+    const pl = lay.detail && lay.withPace && l ? PaceLine(E, l, v.at, indent + LABEL_W) : null
     if (pl) out.push(pl)
   }
   limit('5-hour', five, false, 1)
@@ -993,9 +1014,17 @@ function ctxLines(E: Els, v: View, cols: number, indent: number): RenderChildren
   const tokens = ctxTokens(v)
   const compact = v.b?.autoCompactAt ? `autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? 'autocompact off' : ''
   const ctxRight = [tokens, compact].filter(Boolean).join(' · ')
+  // Its figures go under the bar, as the limits' resets do, so all the bars match.
   return [
-    usageRow(E, v, 'Context', v.u?.ctxPercent, cols >= 60 ? ctxRight : tokens, 0, cols, indent),
-    ...(cols < 60 && compact ? [<Text key="compact-at" dimColor>{' '.repeat(indent + LABEL_W)}{compact}</Text>] : []),
+    usageRow(E, v, 'Context', v.u?.ctxPercent, '', 0, cols, indent),
+    ...(ctxRight
+      ? [
+          <Text key="ctx-figures" dimColor wrap="truncate-end">
+            {' '.repeat(indent + LABEL_W)}
+            {ctxRight}
+          </Text>,
+        ]
+      : []),
   ]
 }
 
@@ -1042,17 +1071,39 @@ function catLines(E: Els, v: View, cols: number, indent: number, max = Infinity)
 }
 
 /**
+ * The three bars with their figures beside them, all one length, sized to the longest
+ * figures. A reset keeps its clock time while that leaves the bars 12 cells; past that,
+ * its countdown alone.
+ */
+function besideBars(E: Els, v: View, cols: number, indent: number): RenderChildren[] {
+  const { five, week, others } = limitsOf(v)
+  const rights = (short: boolean) => [
+    ctxTokens(v),
+    resetText(five, v.at, false, short),
+    resetText(week, v.at, true, short),
+    ...others.map(l => resetText(l, v.at, true, short)),
+  ]
+  const widest = (r: string[]) => r.reduce((a, b) => (b.length > a.length ? b : a), '')
+  const short = rowBarW(cols, indent, widest(rights(false))) < 12
+  const barW = rowBarW(cols, indent, widest(rights(short)))
+  return [
+    usageRow(E, v, 'Context', v.u?.ctxPercent, ctxTokens(v), 0, cols, indent, barW),
+    ...limitLines(E, v, cols, indent, { detail: false, barW, short }),
+  ]
+}
+
+/**
  * The panel's usage figures, one row per entry so a caller can count them: the
  * three bars, or with "more" open the context breakdown and the limits with pace.
  */
 function usageLines(E: Els, v: View, cols: number): RenderChildren[] {
-  if (!v.open) return [usageRow(E, v, 'Context', v.u?.ctxPercent, ctxTokens(v), 0, cols, 0), ...limitLines(E, v, cols, 0, false)]
+  if (!v.open) return besideBars(E, v, cols, 0)
   return [
     usageHead(E, v, 'CONTEXT WINDOW'),
     ...ctxLines(E, v, cols, 2),
     ...catLines(E, v, cols, 2),
     usageHead(E, v, 'PLAN LIMITS'),
-    ...limitLines(E, v, cols, 2, true),
+    ...limitLines(E, v, cols, 2, { detail: true, withPace: true }),
   ]
 }
 
@@ -1060,19 +1111,29 @@ function usageLines(E: Els, v: View, cols: number): RenderChildren[] {
  * The band with "more" open, fitted to the `maxRows` the engine gives it, since a
  * taller tree only shows behind an "n more" row the person has to scroll. A wide band
  * sets the context and the limits side by side; whatever still doesn't fit folds the
- * smallest context categories into one row, then drops the pace lines.
+ * smallest context categories into one row, drops the pace lines, then sets the figures
+ * beside the bars.
  */
 function expandedBand(E: Els, v: View, cols: number, maxRows: number, $: EngineInterface) {
   const { Box, Text } = E
   const two = cols >= 100
   const colW = two ? Math.floor((cols - 3) / 2) : cols
-  const ctx = ctxLines(E, v, colW, 2)
-  const limits = (withPace: boolean) => [usageHead(E, v, 'PLAN LIMITS'), ...limitLines(E, v, colW, 2, withPace)]
+  const head = usageHead(E, v, 'PLAN LIMITS')
+  const ctxDetail = ctxLines(E, v, colW, 2)
+  const [ctxBeside, ...limitsBeside] = besideBars(E, v, colW, 2)
+  // Richest first: figures under the bars with pace lines, then without the pace lines,
+  // then the figures back beside the bars (still one length). The first that leaves a
+  // category row is drawn.
+  const layouts = [
+    { ctx: ctxDetail, right: [head, ...limitLines(E, v, colW, 2, { detail: true, withPace: true })] },
+    { ctx: ctxDetail, right: [head, ...limitLines(E, v, colW, 2, { detail: true, withPace: false })] },
+    { ctx: [ctxBeside], right: [head, ...limitsBeside] },
+  ]
   // The title row, then the context rows; one column also stacks the limits under them.
-  const fixed = (r: RenderChildren[]) => 1 + ctx.length + (two ? 0 : r.length)
-  const fits = (r: RenderChildren[]) => (two ? 1 + r.length : fixed(r) + 1) <= maxRows
-  const right = fits(limits(true)) ? limits(true) : limits(false)
-  const left = [...ctx, ...catLines(E, v, colW, 2, Math.max(1, maxRows - fixed(right)))]
+  const fixed = (l: (typeof layouts)[number]) => 1 + l.ctx.length + (two ? 0 : l.right.length)
+  const fits = (l: (typeof layouts)[number]) => fixed(l) + 1 <= maxRows && (!two || 1 + l.right.length <= maxRows)
+  const { ctx, right } = layouts.find(fits) ?? layouts[layouts.length - 1]!
+  const left = [...ctx, ...catLines(E, v, colW, 2, Math.max(1, maxRows - 1 - ctx.length - (two ? 0 : right.length)))]
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" justifyContent="space-between">

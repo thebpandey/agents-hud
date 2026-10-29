@@ -318,8 +318,8 @@ async function openBand($: Engine, on: On, cats: number, maxRows: number, bodyCo
 // The engine shows a band taller than maxRows behind an "n more" row the person has to scroll:
 // "more" has to show everything it can in one view.
 test('a short, wide band with "more" open fits its rows, keeps the pace lines and folds the smallest categories', async ($, on) => {
-  const band = await openBand($, on, 10, 7, 160)
-  expect(height(await band.drawn())).toBeLessThanOrEqual(7)
+  const band = await openBand($, on, 10, 8, 160)
+  expect(height(await band.drawn())).toBeLessThanOrEqual(8)
   expect(await band.find({ type: 'Text', text: /30k Messages/ })).toBeTruthy()
   expect(await band.find({ type: 'Text', text: /\d+ smaller$/ })).toBeTruthy()
   expect(await band.find({ type: 'Text', text: /Resets before you'd run out/ })).toBeTruthy()
@@ -352,3 +352,45 @@ test("an agent's description reaches the layout whole, not cut to a width the ho
   expect(await ui.find({ type: 'Text', text: ` ${desc}` })).toBeTruthy()
   await ui.unmount()
 })
+
+// Stacked bars of different lengths read as different scales: every usage view draws its
+// bars at one length, whatever figures sit beside or under them.
+async function barLengths(ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<{ text: string } | undefined> }): Promise<number[]> {
+  const out: number[] = []
+  for (const label of ['Context', '5-hour', 'Weekly']) {
+    const row = await ui.find({ type: 'Text', text: new RegExp(`^ *${label} +[█▏▎▍▌▋▊▉░]+ +\\d+%`) })
+    const bar = /^ *\S+ +([█▏▎▍▌▋▊▉░]+)/.exec(row?.text ?? '')?.[1]
+    out.push(bar?.length ?? -1)
+  }
+  return out
+}
+
+for (const bodyColumns of [40, 56, 90]) {
+  test(`the panel's three usage bars share one length, with "more" shut and open (${bodyColumns} columns)`, async ($, on) => {
+    engine(on)
+    on('store.get', () => ({ value: undefined }))
+    on('store.set', () => ({ value: undefined }))
+    await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
+    const shut = await barLengths(ui)
+    expect(shut[0]).toBeGreaterThan(3)
+    expect(new Set(shut).size).toBe(1)
+    await ui.press({ key: 'hud-more' })
+    const open = await barLengths(ui)
+    expect(open[0]).toBeGreaterThan(3)
+    expect(new Set(open).size).toBe(1)
+    // Open, each reset has a line of its own under its bar.
+    expect(await ui.findAll({ type: 'Text', text: /^ {5,}↻ / })).toHaveLength(2)
+    await ui.unmount()
+  })
+}
+
+for (const bodyColumns of [56, 120]) {
+  test(`with "more" open above the prompt, the bars share one length (${bodyColumns} columns)`, async ($, on) => {
+    const band = await openBand($, on, 2, 30, bodyColumns)
+    const lens = await barLengths(band)
+    expect(lens[0]).toBeGreaterThan(3)
+    expect(new Set(lens).size).toBe(1)
+    await band.unmount()
+  })
+}
