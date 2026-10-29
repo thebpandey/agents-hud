@@ -119,11 +119,12 @@ for (const surface of ['terminal', 'desktop'] as const) {
     on('store.set', () => ({ value: undefined }))
     await $.session.start({ cwd: REPO, surface, isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface })
-    expect(await ui.find({ type: 'Text', text: /Context.*25%/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /5-hour.*14%/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /Weekly.*22%/ })).toBeTruthy()
+    // Shut, the panel uses the band's short labels so the bars get the room.
+    expect(await ui.find({ type: 'Text', text: /^CTX .*25%/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^5H .*14%/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^7D .*22%/ })).toBeTruthy()
     // Each meter wears its own colour: the labels of the three bars differ.
-    const labels = await Promise.all(['Context', '5-hour', 'Weekly'].map(l => ui.find({ type: 'Text', text: new RegExp(`^${l} +$`) })))
+    const labels = await Promise.all(['CTX', '5H', '7D'].map(l => ui.find({ type: 'Text', text: new RegExp(`^${l} +$`) })))
     expect(new Set(labels.map(x => x?.props.color)).size).toBe(3)
 
     // The detail opens upward, above the bars: "more" points up, "less" back down.
@@ -142,7 +143,7 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(await ui.find({ type: 'Button', label: /Ember/ })).toBeTruthy()
 
     await ui.press({ key: 'hud-move' })
-    expect(await ui.find({ type: 'Text', text: /5-hour.*14%/ })).toBeFalsy()
+    expect(await ui.find({ type: 'Text', text: /(5-hour|5H) .*14%/ })).toBeFalsy()
     await ui.unmount()
     const band = await $.ui.mount({ ...BAND, surface })
     expect(await band.find({ type: 'Text', text: /CONTEXT WINDOW/ })).toBeTruthy()
@@ -329,8 +330,8 @@ test('a short, wide band with "more" open fits its rows, keeps the pace lines an
 test('a short, narrow band stacks everything in one column and still fits its rows', async ($, on) => {
   const band = await openBand($, on, 10, 8, 80)
   expect(height(await band.drawn())).toBeLessThanOrEqual(8)
-  expect(await band.find({ type: 'Text', text: /5-hour.*14%/ })).toBeTruthy()
-  expect(await band.find({ type: 'Text', text: /Weekly.*22%/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /(5-hour|5H) .*14%/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /(Weekly|7D) .*22%/ })).toBeTruthy()
   await band.unmount()
 })
 
@@ -355,9 +356,11 @@ test("an agent's description reaches the layout whole, not cut to a width the ho
 
 // Stacked bars of different lengths read as different scales: every usage view draws its
 // bars at one length, whatever figures sit beside or under them.
-async function barLengths(ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<{ text: string } | undefined> }): Promise<number[]> {
+const FULL = ['Context', '5-hour', 'Weekly']
+const SHORT = ['CTX', '5H', '7D']
+async function barLengths(ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<{ text: string } | undefined> }, labels = FULL): Promise<number[]> {
   const out: number[] = []
-  for (const label of ['Context', '5-hour', 'Weekly']) {
+  for (const label of labels) {
     const row = await ui.find({ type: 'Text', text: new RegExp(`^ *${label} +[█▏▎▍▌▋▊▉░]+ +\\d+%`) })
     const bar = /^ *\S+ +([█▏▎▍▌▋▊▉░]+)/.exec(row?.text ?? '')?.[1]
     out.push(bar?.length ?? -1)
@@ -372,7 +375,7 @@ for (const bodyColumns of [40, 56, 90]) {
     on('store.set', () => ({ value: undefined }))
     await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const shut = await barLengths(ui)
+    const shut = await barLengths(ui, SHORT)
     expect(shut[0]).toBeGreaterThan(3)
     expect(new Set(shut).size).toBe(1)
     await ui.press({ key: 'hud-more' })
@@ -399,16 +402,16 @@ for (const bodyColumns of [56, 120]) {
 // while the bars keep 12 cells, the weekday and hour while they keep 8, then the countdown.
 for (const [bodyColumns, weekly] of [
   [90, /↻ \d+d \d+h · \w{3}, \w{3} \d+, \d+:\d\d [AP]M$/],
-  [56, /↻ \d+d \d+h · \w{3} \d+(:\d\d)? [AP]M$/],
+  [46, /↻ \d+d \d+h · \w{3} \d+(:\d\d)? [AP]M$/],
   [36, /↻ \d+d \d+h$/],
 ] as const) {
   test(`a shut panel ${bodyColumns} columns wide says the weekly reset as ${weekly}`, async ($, on) => {
     engine(on)
     await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const row = await ui.find({ type: 'Text', text: /^ *Weekly +[█▏▎▍▌▋▊▉░]+ +\d+%/ })
+    const row = await ui.find({ type: 'Text', text: /^ *7D +[█▏▎▍▌▋▊▉░]+ +\d+%/ })
     expect(row?.text).toMatch(weekly)
-    const lens = await barLengths(ui)
+    const lens = await barLengths(ui, SHORT)
     expect(new Set(lens).size).toBe(1)
     expect(lens[0]).toBeGreaterThan(3)
     await ui.unmount()

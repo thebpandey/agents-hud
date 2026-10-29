@@ -952,19 +952,30 @@ function whenText(t: number, at: number): string {
 
 const LABEL_W = 9
 
-/** One meter row: its label, the bar, the percentage, then dim figures on the right. */
 /** The bar's length with `right` beside it; rows that pass one `barW` line up. */
-function rowBarW(cols: number, indent: number, right: string): number {
-  return Math.max(4, Math.min(32, cols - indent - LABEL_W - 4 - (right ? right.length + 2 : 0)))
+function rowBarW(cols: number, indent: number, right: string, labelW = LABEL_W): number {
+  return Math.max(4, Math.min(32, cols - indent - labelW - 4 - (right ? right.length + 2 : 0)))
 }
 
-function usageRow(E: Els, v: View, label: string, pct: number | undefined, right: string, meter: Meter, cols: number, indent: number, barW = rowBarW(cols, indent, right)) {
+/** One meter row: its label, the bar, the percentage, then dim figures on the right. */
+function usageRow(
+  E: Els,
+  v: View,
+  label: string,
+  pct: number | undefined,
+  right: string,
+  meter: Meter,
+  cols: number,
+  indent: number,
+  barW = rowBarW(cols, indent, right),
+  labelW = LABEL_W,
+) {
   const { Text } = E
   return (
     <Text key={`use-${label}`} wrap="truncate-end">
       <Text>{' '.repeat(indent)}</Text>
       <Text bold color={v.t.meters[meter]}>
-        {label.padEnd(LABEL_W)}
+        {label.padEnd(labelW)}
       </Text>
       {Bar(E, pct, barW, v.t, meter)}
       {Pct(E, pct)}
@@ -985,17 +996,24 @@ function usageHead(E: Els, v: View, label: string) {
 type LimitsLayout =
   /** The "more" view: each reset on the line under its bar, then its pace line when `withPace`. */
   | { detail: true; withPace: boolean }
-  /** The bars alone: the reset beside each bar, every bar `barW` long, the reset in `form` to leave it room. */
-  | { detail: false; barW: number; form: ResetForm }
+  /**
+   * The bars alone, under the short labels (`5H`, `7D`) padded to `labelW`: the reset beside
+   * each bar, every bar `barW` long, the reset in `form` to leave it room.
+   */
+  | { detail: false; barW: number; form: ResetForm; labelW: number }
 
 /** The plan limits; a note while none have arrived. */
 function limitLines(E: Els, v: View, cols: number, indent: number, lay: LimitsLayout): RenderChildren[] {
   const { Text } = E
   const { five, week, others } = limitsOf(v)
   const out: RenderChildren[] = []
-  const limit = (label: string, l: HudLimit | undefined, withDay: boolean, meter: Meter) => {
+  const limit = (label: string, short: string, l: HudLimit | undefined, withDay: boolean, meter: Meter) => {
     const reset = resetText(l, v.at, withDay, lay.detail ? 'full' : lay.form)
-    out.push(usageRow(E, v, label, l?.percentUsed, lay.detail ? '' : reset, meter, cols, indent, lay.detail ? undefined : lay.barW))
+    out.push(
+      lay.detail
+        ? usageRow(E, v, label, l?.percentUsed, '', meter, cols, indent)
+        : usageRow(E, v, short, l?.percentUsed, reset, meter, cols, indent, lay.barW, lay.labelW),
+    )
     if (lay.detail && reset) {
       out.push(
         <Text key={`reset-${label}`} dimColor wrap="truncate-end">
@@ -1007,9 +1025,9 @@ function limitLines(E: Els, v: View, cols: number, indent: number, lay: LimitsLa
     const pl = lay.detail && lay.withPace && l ? PaceLine(E, l, v.at, indent + LABEL_W) : null
     if (pl) out.push(pl)
   }
-  limit('5-hour', five, false, 1)
-  limit('Weekly', week, true, 2)
-  for (const l of others) limit(LIMIT_LABEL[l.kind] ?? l.kind, l, true, 2)
+  limit('5-hour', '5H', five, false, 1)
+  limit('Weekly', '7D', week, true, 2)
+  for (const l of others) limit(LIMIT_LABEL[l.kind] ?? l.kind, LIMIT_LABEL[l.kind] ?? l.kind, l, true, 2)
   if (!five && !week) {
     out.push(
       <Text key="no-limits" dimColor wrap="truncate-end">
@@ -1094,17 +1112,19 @@ function catLines(E: Els, v: View, cols: number, indent: number, max = Infinity)
  */
 function besideBars(E: Els, v: View, cols: number, indent: number): RenderChildren[] {
   const { five, week, others } = limitsOf(v)
+  // The short labels the band above the prompt uses; a rarer limit keeps its name.
+  const labelW = Math.max(4, ...others.map(l => (LIMIT_LABEL[l.kind] ?? l.kind).length + 1))
   const widest = (form: ResetForm) =>
     [ctxTokens(v), resetText(five, v.at, false, form), resetText(week, v.at, true, form), ...others.map(l => resetText(l, v.at, true, form))].reduce(
       (a, b) => (b.length > a.length ? b : a),
       '',
     )
-  const room = (form: ResetForm) => rowBarW(cols, indent, widest(form))
+  const room = (form: ResetForm) => rowBarW(cols, indent, widest(form), labelW)
   const form: ResetForm = room('full') >= 12 ? 'full' : room('compact') >= 8 ? 'compact' : 'countdown'
   const barW = room(form)
   return [
-    usageRow(E, v, 'Context', v.u?.ctxPercent, ctxTokens(v), 0, cols, indent, barW),
-    ...limitLines(E, v, cols, indent, { detail: false, barW, form }),
+    usageRow(E, v, 'CTX', v.u?.ctxPercent, ctxTokens(v), 0, cols, indent, barW, labelW),
+    ...limitLines(E, v, cols, indent, { detail: false, barW, form, labelW }),
   ]
 }
 
