@@ -34,7 +34,7 @@ const IDLE = IDLE_FIRST.map(l => `${l}\tDeepSeek\told task\t.claude/worktrees/la
 const WT = `${REPO}/.claude/worktrees/lane-a1-auth`
 
 // Each hook here stands for the engine.
-function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0) {
+function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0, longDesc = '') {
   const clock = mock.clock(on)
   on('command.register', () => ({ value: { command: 'agents-hud' } }))
   on('ui.open', () => (opened.count++, { value: { isPlaced: true } }))
@@ -78,7 +78,7 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraC
       ? Array.from({ length: crowd }, (_, i) => ({ id: `c${i}`, description: `task ${i}`, type: 'sonnet-lane', status: 'running' }))
       : [
       { id: 'a1', description: 'a1-auth: auth refactor', type: 'sonnet-lane', status: 'running', name: 'auth-coder' },
-      { id: 'a2', description: 'look for usages', type: 'Explore', status: 'completed' },
+      { id: 'a2', description: longDesc || 'look for usages', type: 'Explore', status: 'completed' },
       { id: 'a3', description: 'docs pass', type: 'glm', status: 'running' },
       { id: 'a4', description: 'Review lane a1-auth', type: 'lane-reviewer', status: 'running' },
     ],
@@ -340,4 +340,15 @@ test('a band with room lists every category and folds none', async ($, on) => {
   expect(await band.find({ type: 'Text', text: /Extra 0/ })).toBeTruthy()
   expect(await band.find({ type: 'Text', text: /\d+ smaller$/ })).toBeFalsy()
   await band.unmount()
+})
+
+// The panel can be dragged wide, and a width measured in the hook can lag the one drawn:
+// the description goes to the layout whole, so it shows as far as the drawn width allows.
+test("an agent's description reaches the layout whole, not cut to a width the hook guessed", async ($, on) => {
+  const desc = 'Build one-off migration script for the billing tables and backfill invoices'
+  engine(on, 0, 0, desc)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns: 40 } })
+  expect(await ui.find({ type: 'Text', text: ` ${desc}` })).toBeTruthy()
+  await ui.unmount()
 })

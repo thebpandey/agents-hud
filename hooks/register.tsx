@@ -69,6 +69,11 @@ type View = {
   f: number
   /** 0 full cards, 1 compact (two lines): chosen so every card fits; past compact, cards page. */
   density: Density
+  /**
+   * The context bars' width, shared so every card's bar lines up: `cap` is drawn, and
+   * each card lowers `min` to what its own text leaves; the pane draws twice to apply it.
+   */
+  bar: { cap: number; min: number }
 }
 
 type Density = 0 | 1
@@ -653,34 +658,42 @@ type CardData = {
 function Card(E: Els, v: View, d: CardData, cols: number) {
   const { Box, Text, Button } = E
   const inner = Math.max(16, cols - AV_W - 3)
-  // The bar takes what the name and a short branch leave over, between 4 and 8 cells:
-  // a long bar was cutting the name, which matters more than the bar's resolution.
-  const barW = Math.max(4, Math.min(8, Math.floor(inner / 5), inner - 6 - d.nick.length - 8))
-  const left = Math.max(6, inner - (barW + 6))
-  // The name whole, then the branch (up to about half of what's left), then the description.
-  const nick = cut(d.nick, Math.max(4, left - 8))
-  const free = left - nick.length
-  const descNeed = d.title ? d.title.length + 1 : 0
-  const branchNeed = d.branch ? d.branch.length + 3 : 0
-  const branchW = branchNeed + descNeed <= free ? branchNeed : Math.min(branchNeed, Math.max(Math.floor(free * 0.55), free - descNeed))
-  const descW = free - branchW
-  const rest = d.title && descW > 2 ? ` ${cut(d.title, descW - 1)}` : ''
-  const branch = cut(d.branch, Math.max(2, branchW - 3))
-  const label = [<Text bold>{nick}</Text>, <Text>{rest}</Text>, d.branch ? <Text dimColor> ⎇ {branch}</Text> : null]
-  const head = d.onPress ? (
+  // The bar gives way first, from 8 cells down to 4, so the name and what the agent
+  // is doing keep the room. The column is inner + 2; a cell of gap and " 46%" sit beside.
+  const want = d.nick.length + (d.title ? d.title.length + 1 : 0) + (d.branch ? d.branch.length + 3 : 0)
+  const fit = Math.max(4, Math.min(8, inner - 4 - want))
+  v.bar.min = Math.min(v.bar.min, fit)
+  const barW = Math.min(fit, v.bar.cap)
+  const nick = cut(d.nick, Math.max(4, inner - barW - 7))
+  // Past that the layout cuts at the width actually drawn, not one measured here: the
+  // branch goes first (its shrink weight dwarfs the description's), then the description.
+  const name = d.onPress ? (
     <Button key={`view-${d.id}`} plain onPress={d.onPress}>
-      {label}
+      <Text bold>{nick}</Text>
     </Button>
   ) : (
-    <Text wrap="truncate-end">{label}</Text>
+    <Text bold>{nick}</Text>
   )
   return (
     <Box key={`card-${d.id}`} flexDirection="row" gap={1} marginBottom={v.density === 0 ? 1 : 0}>
       {Avatar(E, v, d.id, d.isMain, d.motion)}
       <Box flexDirection="column" flexGrow={1}>
-        <Box flexDirection="row" justifyContent="space-between">
-          <Box flexShrink={1}>{head}</Box>
-          {/* Rigid: under a long name the name gives way, never the bar or its percentage. */}
+        <Box flexDirection="row">
+          <Box flexShrink={0}>{name}</Box>
+          {d.title ? (
+            <Box flexShrink={1}>
+              <Text wrap="truncate-end"> {d.title}</Text>
+            </Box>
+          ) : null}
+          {d.branch ? (
+            <Box flexShrink={1000}>
+              <Text dimColor wrap="truncate-end">
+                {' '}⎇ {d.branch}
+              </Text>
+            </Box>
+          ) : null}
+          <Box flexGrow={1} minWidth={1} />
+          {/* Rigid: the bar's width is chosen above, so the layout never squeezes it or wraps its percentage. */}
           <Box flexShrink={0}>{d.noCtx ? <Text dimColor>external</Text> : CtxBar(E, d.pct, barW, v.t)}</Box>
         </Box>
         <Box flexDirection="row" justifyContent="space-between">
@@ -1353,7 +1366,7 @@ async function view($: EngineInterface, surface: string): Promise<View> {
     ...ag.map(a => ({ id: a.id, at: a.startedAt, fixed: a.name || undefined })),
     ...jb.map(j => ({ id: j.id, at: j.startedAt })),
   ])
-  return { ag, m, u, b, l, jobs: jb, isLanes, at, raster: surface === 'terminal', nick, t: themeOf(ti), style: st, open: op, where: wh, showIdle: si, f: 0, density: 0 }
+  return { ag, m, u, b, l, jobs: jb, isLanes, at, raster: surface === 'terminal', nick, t: themeOf(ti), style: st, open: op, where: wh, showIdle: si, f: 0, density: 0, bar: { cap: 8, min: 8 } }
 }
 
 // ── Registration ─────────────────────────────────────────────────────────
@@ -1633,6 +1646,10 @@ export const register: Register = on => {
       room = Math.max(1, budget - 2 - CARD_ROWS[density] - (foot?.rows ?? 0))
       if (items.reduce((n, i) => n + i.rows, 0) <= room) break
     }
+    // Every card has now said how wide a bar its text leaves: draw them all at the narrowest.
+    mainCard(E, v, cols, branch)
+    v.bar.cap = v.bar.min
+    items = base.isLanes ? laneItems(E, v, cols, $) : agentItems(E, v, cols, $)
     const total = items.reduce((n, i) => n + i.rows, 0)
     scrolling.active = total > room
     scrolling.max = Math.max(0, total - room)

@@ -56,6 +56,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 - **Click an agent's name** to open its transcript.
 - **Avatars move while their agent works** and stand still once it's idle or done.
 - **Lanes:** after you run `/lanes`, agents the session starts directly (outside any lane) are listed first, under **Direct agents**. Below them, agents are grouped under their lane, with a rail down the left of each lane's cards. Lanes with something running come first. Lanes with nothing in this session fold into one "▸ N more lanes" row that you can click to expand.
+- **Narrow panel:** what each agent is doing keeps the room. The context bars shrink first (all together, so they stay lined up), then the branch, and only then the description. Widen the panel to read more of it.
 - **Many agents:** cards shrink to fit the panel, down to two lines each (never one). If they still don't fit, the list scrolls a row at a time with the mouse wheel or trackpad. The header, this session's card and the usage footer stay in place.
 
 ### Usage stats and settings
