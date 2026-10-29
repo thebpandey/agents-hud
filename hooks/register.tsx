@@ -848,11 +848,27 @@ function Pct(E: Els, pct: number | undefined) {
   )
 }
 
-/** `↻ 3h 56m · 6:30 PM`, or with `short` the countdown alone. */
-function resetText(l: HudLimit | undefined, at: number, withDay: boolean, short = false): string {
+/** How much of a reset to say: `full` the date, `compact` the weekday and hour, `countdown` neither. */
+type ResetForm = 'full' | 'compact' | 'countdown'
+
+/** `Thu 1 PM`, `6:30 PM`: within a week of now the weekday names the day. */
+function fmtClockCompact(t: number, withDay: boolean): string {
+  const time = fmtClock(t, false).replace(':00', '')
+  if (!withDay) return time
+  try {
+    return `${new Date(t).toLocaleString('en-US', { weekday: 'short' })} ${time}`
+  } catch {
+    return time
+  }
+}
+
+/** `↻ 6d 23h · Thu, Nov 5, 1:00 PM`, `↻ 6d 23h · Thu 1 PM` or `↻ 6d 23h`, by `form`. */
+function resetText(l: HudLimit | undefined, at: number, withDay: boolean, form: ResetForm = 'full'): string {
   const t = l?.resetsAt ? Date.parse(l.resetsAt) : NaN
   if (!Number.isFinite(t)) return ''
-  return short ? `↻ ${fmtDur(t - at)}` : `↻ ${fmtDur(t - at)} · ${fmtClock(t, withDay)}`
+  const left = `↻ ${fmtDur(t - at)}`
+  if (form === 'countdown') return left
+  return `${left} · ${form === 'compact' ? fmtClockCompact(t, withDay) : fmtClock(t, withDay)}`
 }
 
 function limitsOf(v: View) {
@@ -969,8 +985,8 @@ function usageHead(E: Els, v: View, label: string) {
 type LimitsLayout =
   /** The "more" view: each reset on the line under its bar, then its pace line when `withPace`. */
   | { detail: true; withPace: boolean }
-  /** The bars alone: the reset beside each bar, every bar `barW` long, the reset `short` to leave it room. */
-  | { detail: false; barW: number; short: boolean }
+  /** The bars alone: the reset beside each bar, every bar `barW` long, the reset in `form` to leave it room. */
+  | { detail: false; barW: number; form: ResetForm }
 
 /** The plan limits; a note while none have arrived. */
 function limitLines(E: Els, v: View, cols: number, indent: number, lay: LimitsLayout): RenderChildren[] {
@@ -978,7 +994,7 @@ function limitLines(E: Els, v: View, cols: number, indent: number, lay: LimitsLa
   const { five, week, others } = limitsOf(v)
   const out: RenderChildren[] = []
   const limit = (label: string, l: HudLimit | undefined, withDay: boolean, meter: Meter) => {
-    const reset = resetText(l, v.at, withDay, !lay.detail && lay.short)
+    const reset = resetText(l, v.at, withDay, lay.detail ? 'full' : lay.form)
     out.push(usageRow(E, v, label, l?.percentUsed, lay.detail ? '' : reset, meter, cols, indent, lay.detail ? undefined : lay.barW))
     if (lay.detail && reset) {
       out.push(
@@ -1072,23 +1088,23 @@ function catLines(E: Els, v: View, cols: number, indent: number, max = Infinity)
 
 /**
  * The three bars with their figures beside them, all one length, sized to the longest
- * figures. A reset keeps its clock time while that leaves the bars 12 cells; past that,
- * its countdown alone.
+ * figures. A reset says its full date while that leaves the bars 12 cells, its weekday
+ * and hour while that leaves them 8, and past that its countdown alone: shorter bars are
+ * worth the reset time, stubs are not.
  */
 function besideBars(E: Els, v: View, cols: number, indent: number): RenderChildren[] {
   const { five, week, others } = limitsOf(v)
-  const rights = (short: boolean) => [
-    ctxTokens(v),
-    resetText(five, v.at, false, short),
-    resetText(week, v.at, true, short),
-    ...others.map(l => resetText(l, v.at, true, short)),
-  ]
-  const widest = (r: string[]) => r.reduce((a, b) => (b.length > a.length ? b : a), '')
-  const short = rowBarW(cols, indent, widest(rights(false))) < 12
-  const barW = rowBarW(cols, indent, widest(rights(short)))
+  const widest = (form: ResetForm) =>
+    [ctxTokens(v), resetText(five, v.at, false, form), resetText(week, v.at, true, form), ...others.map(l => resetText(l, v.at, true, form))].reduce(
+      (a, b) => (b.length > a.length ? b : a),
+      '',
+    )
+  const room = (form: ResetForm) => rowBarW(cols, indent, widest(form))
+  const form: ResetForm = room('full') >= 12 ? 'full' : room('compact') >= 8 ? 'compact' : 'countdown'
+  const barW = room(form)
   return [
     usageRow(E, v, 'Context', v.u?.ctxPercent, ctxTokens(v), 0, cols, indent, barW),
-    ...limitLines(E, v, cols, indent, { detail: false, barW, short }),
+    ...limitLines(E, v, cols, indent, { detail: false, barW, form }),
   ]
 }
 

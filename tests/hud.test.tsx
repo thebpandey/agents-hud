@@ -394,3 +394,23 @@ for (const bodyColumns of [56, 120]) {
     await band.unmount()
   })
 }
+
+// Shut, the bars give up length for the reset time before the time goes: the full date
+// while the bars keep 12 cells, the weekday and hour while they keep 8, then the countdown.
+for (const [bodyColumns, weekly] of [
+  [90, /↻ \d+d \d+h · \w{3}, \w{3} \d+, \d+:\d\d [AP]M$/],
+  [56, /↻ \d+d \d+h · \w{3} \d+(:\d\d)? [AP]M$/],
+  [36, /↻ \d+d \d+h$/],
+] as const) {
+  test(`a shut panel ${bodyColumns} columns wide says the weekly reset as ${weekly}`, async ($, on) => {
+    engine(on)
+    await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
+    const row = await ui.find({ type: 'Text', text: /^ *Weekly +[█▏▎▍▌▋▊▉░]+ +\d+%/ })
+    expect(row?.text).toMatch(weekly)
+    const lens = await barLengths(ui)
+    expect(new Set(lens).size).toBe(1)
+    expect(lens[0]).toBeGreaterThan(3)
+    await ui.unmount()
+  })
+}
