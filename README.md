@@ -50,13 +50,13 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
-- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.10`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.11`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
 - **Avatars move while their agent works** and stand still once it's idle or done.
 - **Lanes:** after you run `/lanes`, agents the session starts directly (outside any lane) are listed first, under **Direct agents**. Below them, agents are grouped under their lane, with a rail down the left of each lane's cards. Lanes with something running come first. Lanes with nothing in this session fold into one "▸ N more lanes" row that you can click to expand.
-- **Many agents:** cards shrink to fit the panel, down to one line each. If they still don't fit, the cards scroll with the mouse wheel, with the arrow keys while the panel has focus, or with the ▲/▼ "more" rows.
+- **Many agents:** cards shrink to fit the panel, down to two lines each (never one). If they still don't fit, the list scrolls a row at a time with the mouse wheel or trackpad. The header, this session's card and the usage footer stay in place.
 
 ### Usage stats and settings
 

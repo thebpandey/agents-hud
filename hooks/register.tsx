@@ -67,12 +67,12 @@ type View = {
   showIdle: boolean
   /** The animation frame; only the panel reads it, so the band isn't redrawn per frame. */
   f: number
-  /** 0 full cards, 1 compact, 2 one line each: chosen so every card fits. */
+  /** 0 full cards, 1 compact (two lines): chosen so every card fits; past compact, cards page. */
   density: Density
 }
 
-type Density = 0 | 1 | 2
-const CARD_ROWS = [4, 2, 1] as const
+type Density = 0 | 1
+const CARD_ROWS = [4, 2] as const
 
 // ── Formatting ───────────────────────────────────────────────────────────
 
@@ -232,8 +232,8 @@ async function nextAvatars($: EngineInterface, name?: string): Promise<string> {
   return style
 }
 
-// The pixel rows each density draws: the whole robot, its head and chest, its face.
-const AV_PIXELS = [[0, 1, 2, 3, 4, 5], [1, 2, 3, 4], [2, 3]] as const
+// The pixel rows each density draws: the whole robot, then its head and chest.
+const AV_PIXELS = [[0, 1, 2, 3, 4, 5], [1, 2, 3, 4]] as const
 
 /** What an avatar is doing, which picks its motion; 'still' draws it at rest. */
 type Motion = 'still' | 'thinking' | 'generating' | 'tool' | 'running'
@@ -288,14 +288,11 @@ function avatarCells(id: string, isMain: boolean, density: Density, t: Theme, st
     CELLS.set(memo, out)
     return out
   }
-  // A one-line card's face fills the top half of its cell alone: with both halves lit,
-  // the faces of cards on consecutive rows touched and read as one tall avatar.
-  const gap = density === 2
   const words = new Uint32Array(AV_W * rows * 3)
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < AV_W; c++) {
       const top = pal[grid[px[r * 2]!]![c]!]
-      const bot = gap ? undefined : pal[grid[px[r * 2 + 1]!]![c]!]
+      const bot = pal[grid[px[r * 2 + 1]!]![c]!]
       const i = (r * AV_W + c) * 3
       if (top === undefined && bot === undefined) words.set([0x20, DEFAULT, DEFAULT], i)
       else if (top === undefined) words.set([0x2584, bot!, DEFAULT], i)
@@ -655,17 +652,11 @@ type CardData = {
 
 function Card(E: Els, v: View, d: CardData, cols: number) {
   const { Box, Text, Button } = E
-  const tiny = v.density === 2
   const inner = Math.max(16, cols - AV_W - 3)
   // The bar takes what the name and a short branch leave over, between 4 and 8 cells:
   // a long bar was cutting the name, which matters more than the bar's resolution.
-  const barW = tiny ? 0 : Math.max(4, Math.min(8, Math.floor(inner / 5), inner - 6 - d.nick.length - 8))
-  // One line still names the agent's own model: a lane's agents needn't share the one
-  // its registry row plans, and an external job's engine says more than "ext".
-  const model = tiny && d.model ? `${cut(d.model, 14)} ` : ''
-  const status = tiny ? `${d.st.icon} ${cut(d.st.label, 10)} ${d.noCtx ? '' : d.pct === undefined ? '  –' : `${String(Math.round(d.pct)).padStart(3)}%`}`.trimEnd() : ''
-  const right = model + status
-  const left = Math.max(6, inner - (tiny ? right.length + 1 : barW + 6))
+  const barW = Math.max(4, Math.min(8, Math.floor(inner / 5), inner - 6 - d.nick.length - 8))
+  const left = Math.max(6, inner - (barW + 6))
   // The name whole, then the branch (up to about half of what's left), then the description.
   const nick = cut(d.nick, Math.max(4, left - 8))
   const free = left - nick.length
@@ -683,20 +674,6 @@ function Card(E: Els, v: View, d: CardData, cols: number) {
   ) : (
     <Text wrap="truncate-end">{label}</Text>
   )
-  if (tiny) {
-    return (
-      <Box key={`card-${d.id}`} flexDirection="row" gap={1}>
-        {Avatar(E, v, d.id, d.isMain, d.motion)}
-        <Box flexDirection="row" flexGrow={1} justifyContent="space-between">
-          <Box flexShrink={1}>{head}</Box>
-          <Text>
-            <Text dimColor>{model}</Text>
-            <Text color={d.st.color}>{status}</Text>
-          </Text>
-        </Box>
-      </Box>
-    )
-  }
   return (
     <Box key={`card-${d.id}`} flexDirection="row" gap={1} marginBottom={v.density === 0 ? 1 : 0}>
       {Avatar(E, v, d.id, d.isMain, d.motion)}
@@ -1085,6 +1062,37 @@ async function refreshBreakdown($: EngineInterface, columns: number) {
 async function toggleBand($: EngineInterface, columns = 100) {
   const open = await update($, expanded, x => !x)
   if (open) await refreshBreakdown($, columns).catch(() => undefined)
+}
+
+/**
+ * How far one scroll moves the cards' window, in rows. A wheel tick or an arrow moves a
+ * row; a page key (the engine's `bodyRows`) the window less a row, so one stays in view;
+ * Home and End (its `contentRows`) run to the ends.
+ */
+export function scrollStep(by: number, bodyRows: number, contentRows: number, window: number, max: number): number {
+  const n = Math.abs(by)
+  if (n > 1 && n === bodyRows) return Math.sign(by) * Math.max(1, window - 1)
+  if (n > 1 && n >= contentRows) return Math.sign(by) * (max + 1)
+  return by
+}
+
+/**
+ * The cards inside a window of `room` rows from row `offset`: each card's index, the rows
+ * cut off its top and the rows that show. A card cut by either edge shows only its rows
+ * inside, so the list moves a row at a time rather than a card at a time.
+ */
+export function cardWindow(rows: readonly number[], offset: number, room: number): { index: number; cutTop: number; shown: number }[] {
+  const out: { index: number; cutTop: number; shown: number }[] = []
+  let at = 0
+  for (let index = 0; index < rows.length; index++) {
+    const start = at
+    at += rows[index]!
+    if (at <= offset) continue
+    if (start >= offset + room) break
+    const cutTop = Math.max(0, offset - start)
+    out.push({ index, cutTop, shown: rows[index]! - cutTop - Math.max(0, at - (offset + room)) })
+  }
+  return out
 }
 
 function Header(E: Els, v: View, cols: number, version: string | undefined) {
@@ -1509,19 +1517,18 @@ export const register: Register = on => {
 
   // While the cards outgrow the panel, the header, this session and the footer
   // stay put and the cards between them scroll a row at a time.
-  const paging = { active: false, max: 0, page: 1 }
+  const scrolling = { active: false, max: 0, window: 1 }
 
   on('ui.scroll', { requestId: PANE }, async ($, e, next) => {
-    if (!paging.active) return next(e)
-    const dir = Math.sign(e.by)
-    const by = Math.abs(e.by) >= Math.max(2, e.bodyRows) ? paging.page : Math.abs(e.by)
-    if (dir) await update($, skip, s => Math.max(0, Math.min(paging.max, Math.min(s, paging.max) + dir * by)))
+    if (!scrolling.active) return next(e)
+    const by = scrollStep(e.by, e.bodyRows, e.contentRows, scrolling.window, scrolling.max)
+    if (by) await update($, skip, s => Math.max(0, Math.min(scrolling.max, Math.min(s, scrolling.max) + by)))
     return {}
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const E = $.ui.resolve(e)
-    const { Box, Button, Text } = E
+    const { Box } = E
     const [seen, moving, version] = await Promise.all([view($, e.surface), read($, motion), pluginVersion($)])
     const base = { ...seen, f: moving ? await read($, frame) : 0 }
     // One column of gutter off the divider the engine draws against the chat.
@@ -1532,54 +1539,41 @@ export const register: Register = on => {
     let items: Item[] = []
     let room = 0
     const foot = base.where === 'panel' ? panelFooter(E, base, cols, $) : undefined
-    for (const density of [0, 1, 2] as const) {
+    // Never below two-line cards: a one-row avatar is too flat to read as a face, and one
+    // line can't hold the status beside the name. Past that, the cards scroll.
+    for (const density of [0, 1] as const) {
       v = { ...base, density }
       items = base.isLanes ? laneItems(E, v, cols, $) : agentItems(E, v, cols, $)
-      room = budget - 2 - CARD_ROWS[density] - (foot?.rows ?? 0)
+      room = Math.max(1, budget - 2 - CARD_ROWS[density] - (foot?.rows ?? 0))
       if (items.reduce((n, i) => n + i.rows, 0) <= room) break
     }
     const total = items.reduce((n, i) => n + i.rows, 0)
-    paging.active = total > room
-    let body = items
-    let above = 0
-    let below = 0
-    if (paging.active) {
-      const win = Math.max(1, room - 2)
-      let tail = 0
-      let max = items.length
-      while (max > 0 && tail + items[max - 1]!.rows <= win) tail += items[--max]!.rows
-      paging.max = max
-      const first = Math.min(await read($, skip), max)
-      let used = 0
-      let last = first
-      while (last < items.length && used + items[last]!.rows <= win) used += items[last++]!.rows
-      if (last === first) last = first + 1
-      paging.page = Math.max(1, last - first - 1)
-      body = items.slice(first, last)
-      above = first
-      below = items.length - last
-    }
-    const more = (n: number, dir: 1 | -1) =>
-      n ? (
-        <Button key={dir < 0 ? 'more-up' : 'more-down'} plain onPress={() => void update($, skip, s => Math.max(0, Math.min(paging.max, Math.min(s, paging.max) + dir * paging.page)))}>
-          <Text dimColor>
-            {dir < 0 ? '▲' : '▼'} {n} more {dir < 0 ? 'above' : 'below'}
-          </Text>
-        </Button>
+    scrolling.active = total > room
+    scrolling.max = Math.max(0, total - room)
+    scrolling.window = room
+    const offset = scrolling.active ? Math.min(await read($, skip), scrolling.max) : 0
+    // A card cut by an edge shows the rows inside the window, shifted up in a clipping box.
+    const body = cardWindow(items.map(i => i.rows), offset, room).map(({ index, cutTop, shown }) => {
+      const i = items[index]!
+      return shown === i.rows ? (
+        i.node
       ) : (
-        <Text> </Text>
+        <Box key={`clip-${index}`} flexDirection="column" flexShrink={0} height={shown} overflow="hidden">
+          <Box flexDirection="column" flexShrink={0} position="relative" top={-cutTop}>
+            {i.node}
+          </Box>
+        </Box>
       )
+    })
     return (
       // A docked pane's body doesn't size its tree, so "100%" would collapse to the
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
       <Box flexDirection="column" paddingLeft={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
         {Header(E, v, cols, version)}
         {mainCard(E, v, cols, branch)}
-        {paging.active ? more(above, -1) : null}
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
-          {body.map(i => i.node)}
+          {body}
         </Box>
-        {paging.active ? more(below, 1) : null}
         {foot?.node}
       </Box>
     )

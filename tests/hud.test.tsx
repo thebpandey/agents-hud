@@ -1,5 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 
+import { cardWindow, scrollStep } from '../hooks/register'
+
 const PANE = {
   plugin: 'agents-hud',
   component: 'Pane',
@@ -144,17 +146,19 @@ for (const surface of ['terminal', 'desktop'] as const) {
     await band.unmount()
   })
 
-  test(`a crowded panel shrinks the cards, then pages them (${surface})`, async ($, on) => {
+  test(`a crowded panel stops at two-line cards and scrolls, with no paging rows (${surface})`, async ($, on) => {
     engine(on, 30)
     await $.session.start({ cwd: REPO, surface, isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 30 } } })
 
     expect(await ui.find({ type: 'Text', text: /task 0/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /task 29/ })).toBeFalsy()
-    expect(await ui.find({ type: 'Text', text: /▼ \d+ more below/ })).toBeTruthy()
-    for (let i = 0; i < 5; i++) if (await ui.find({ key: 'more-down' })) await ui.press({ key: 'more-down' })
-    expect(await ui.find({ type: 'Text', text: /task 29/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /▲ \d+ more above/ })).toBeTruthy()
+    // Paging rows are gone: the list scrolls by the wheel and keys.
+    expect(await ui.find({ type: 'Text', text: /more (below|above)/ })).toBeFalsy()
+    // Even crowded, each card keeps its status on a second line beside the name's.
+    expect(await ui.find({ type: 'Text', text: /● Working/ })).toBeTruthy()
+    // The card cut by the window's bottom edge shows its rows inside, clipped.
+    expect((await ui.findAll({ type: 'Box' })).some(b => /^clip-\d+$/.test(String(b.key)))).toBe(true)
     await ui.unmount()
   })
 
@@ -250,20 +254,33 @@ test("the band's ◫ panel button toggles the side panel", async ($, on) => {
   await band.unmount()
 })
 
-test("one-line cards' avatars light only the top half of their row, so they don't merge", async ($, on) => {
+test('a crowded terminal panel keeps two-row avatars instead of flattening them to one', async ($, on) => {
   engine(on, 30)
   await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
   const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, scroll: { offset: 0, bodyRows: 30 } } })
-  const av = (await ui.findAll({ type: 'Raster' })).find(x => /^av2robots-c\d+$/.test(String(x.key)))
-  expect(av).toBeTruthy()
-  // Each cell is three words: the glyph, its colour, the colour under it.
-  const bytes = Uint8Array.from(atob(String(av!.props.cells)), ch => ch.charCodeAt(0))
-  const words = new Uint32Array(bytes.buffer)
-  const backs = new Set<number>()
-  for (let i = 0; i < words.length; i += 3) {
-    expect(words[i]).not.toBe(0x2584)
-    backs.add(words[i + 2]!)
-  }
-  expect(backs.size).toBe(1)
+  const avs = (await ui.findAll({ type: 'Raster' })).filter(x => /-c\d+$/.test(String(x.key)))
+  expect(avs.length).toBeGreaterThan(0)
+  for (const av of avs) expect(av.props.rows).toBe(2)
   await ui.unmount()
+})
+
+test('the window moves a row per wheel tick and cuts the edge cards, so scrolling is smooth', () => {
+  // Three two-row cards and a lane header: rows 0-1, 2-3, 4, 5-6.
+  const rows = [2, 2, 1, 2]
+  expect(cardWindow(rows, 0, 4)).toEqual([{ index: 0, cutTop: 0, shown: 2 }, { index: 1, cutTop: 0, shown: 2 }])
+  // One row down: the first card shows its bottom row only, the header comes in whole.
+  expect(cardWindow(rows, 1, 4)).toEqual([{ index: 0, cutTop: 1, shown: 1 }, { index: 1, cutTop: 0, shown: 2 }, { index: 2, cutTop: 0, shown: 1 }])
+  // A card cut by the bottom edge shows its top row.
+  expect(cardWindow(rows, 2, 4)).toEqual([{ index: 1, cutTop: 0, shown: 2 }, { index: 2, cutTop: 0, shown: 1 }, { index: 3, cutTop: 0, shown: 1 }])
+  // Every row of the window is filled, at every offset.
+  for (let o = 0; o <= 3; o++) expect(cardWindow(rows, o, 4).reduce((n, c) => n + c.shown, 0)).toBe(4)
+})
+
+test('a wheel tick moves one row, a page key a window less a row, Home and End the whole way', () => {
+  expect(scrollStep(1, 30, 30, 12, 50)).toBe(1)
+  expect(scrollStep(-3, 30, 30, 12, 50)).toBe(-3) // ticks summed in flight
+  expect(scrollStep(30, 30, 30, 12, 50)).toBe(11)
+  expect(scrollStep(-30, 30, 30, 12, 50)).toBe(-11)
+  expect(scrollStep(40, 30, 40, 12, 50)).toBe(51)
+  expect(scrollStep(-40, 30, 40, 12, 50)).toBe(-51)
 })
