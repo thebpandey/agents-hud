@@ -1,4 +1,6 @@
+import type { On } from 'claude-code'
 import { expect, mock, test } from 'claude-code/testing'
+import type { Engine } from 'claude-code/testing'
 
 import { cardWindow, scrollStep } from '../hooks/register'
 
@@ -32,7 +34,7 @@ const IDLE = IDLE_FIRST.map(l => `${l}\tDeepSeek\told task\t.claude/worktrees/la
 const WT = `${REPO}/.claude/worktrees/lane-a1-auth`
 
 // Each hook here stands for the engine.
-function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0) {
+function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0) {
   const clock = mock.clock(on)
   on('command.register', () => ({ value: { command: 'agents-hud' } }))
   on('ui.open', () => (opened.count++, { value: { isPlaced: true } }))
@@ -53,6 +55,7 @@ function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0) {
                   { name: 'Messages', tokens: 30_000, kind: 'used' },
                   { name: 'System tools', tokens: 12_000, kind: 'used' },
                   { name: 'Free space', tokens: 140_000, kind: 'free' },
+                  ...Array.from({ length: extraCats }, (_, i) => ({ name: `Extra ${i}`, tokens: 1000 + i, kind: 'used' })),
                 ],
                 totalTokens: 50_000,
                 maxTokens: 200_000,
@@ -283,4 +286,55 @@ test('a wheel tick moves one row, a page key a window less a row, Home and End t
   expect(scrollStep(-30, 30, 30, 12, 50)).toBe(-11)
   expect(scrollStep(40, 30, 40, 12, 50)).toBe(51)
   expect(scrollStep(-40, 30, 40, 12, 50)).toBe(-51)
+})
+
+/** Rows a drawn tree takes, laid out the way the terminal stacks it: a column sums, a row takes its tallest. */
+function height(el: unknown): number {
+  if (Array.isArray(el)) return el.reduce((n: number, c: unknown) => n + height(c), 0)
+  if (typeof el !== 'object' || el === null || !('type' in el)) return 0
+  if (el.type !== 'Box') return 1
+  const props = ('props' in el && typeof el.props === 'object' && el.props !== null ? el.props : {}) as { flexDirection?: string; marginBottom?: number }
+  const kids: unknown[] = 'children' in el && Array.isArray(el.children) ? el.children.flat(Infinity) : []
+  const inner = props.flexDirection === 'row' ? Math.max(0, ...kids.map(height)) : kids.reduce((n: number, c) => n + height(c), 0)
+  return inner + (props.marginBottom ?? 0)
+}
+
+async function openBand($: Engine, on: On, cats: number, maxRows: number, bodyColumns: number) {
+  engine(on, 0, cats)
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'hud-move' })
+  await pane.unmount()
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, maxRows, bodyColumns, scroll: { offset: 0, bodyRows: maxRows - 1 } } })
+  await band.press({ key: 'hud-more' })
+  return band
+}
+
+// The engine shows a band taller than maxRows behind an "n more" row the person has to scroll:
+// "more" has to show everything it can in one view.
+test('a short, wide band with "more" open fits its rows, keeps the pace lines and folds the smallest categories', async ($, on) => {
+  const band = await openBand($, on, 10, 7, 160)
+  expect(height(await band.drawn())).toBeLessThanOrEqual(7)
+  expect(await band.find({ type: 'Text', text: /30k Messages/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /\d+ smaller$/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /Resets before you'd run out/ })).toBeTruthy()
+  await band.unmount()
+})
+
+test('a short, narrow band stacks everything in one column and still fits its rows', async ($, on) => {
+  const band = await openBand($, on, 10, 8, 80)
+  expect(height(await band.drawn())).toBeLessThanOrEqual(8)
+  expect(await band.find({ type: 'Text', text: /5-hour.*14%/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /Weekly.*22%/ })).toBeTruthy()
+  await band.unmount()
+})
+
+test('a band with room lists every category and folds none', async ($, on) => {
+  const band = await openBand($, on, 4, 30, 80)
+  expect(height(await band.drawn())).toBeLessThanOrEqual(30)
+  expect(await band.find({ type: 'Text', text: /Extra 0/ })).toBeTruthy()
+  expect(await band.find({ type: 'Text', text: /\d+ smaller$/ })).toBeFalsy()
+  await band.unmount()
 })

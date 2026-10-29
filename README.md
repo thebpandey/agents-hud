@@ -50,7 +50,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
-- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.11`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.12`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
@@ -74,7 +74,7 @@ The row under the bars holds the settings:
 
 | Button | What it does |
 |---|---|
-| `▾ more` / `▴ less` | Opens a detailed view above the bars: what fills the context window (messages, system tools, skills, memory files), where autocompact starts, and a pace line under each limit, such as "⚠ At this pace you'll run out by 4:12 PM" or "✓ Resets before you'd run out" |
+| `▾ more` / `▴ less` | Opens a detailed view above the bars: what fills the context window (messages, system tools, skills, memory files), where autocompact starts, and a pace line under each limit, such as "⚠ At this pace you'll run out by 4:12 PM" or "✓ Resets before you'd run out". Above the prompt it fits on screen without scrolling: a wide terminal sets the context and the limits side by side, and a short one folds the smallest context categories into one "N smaller" row |
 | `🎨 Claude` | Switches to the next colour theme |
 | `☺ robots` | Switches to the next avatar style |
 | `⇠ to chat` | Moves the usage stats to a band above the prompt, under the chat. There, `⇢ to panel` moves them back, and `◫ panel` opens or closes the side panel |

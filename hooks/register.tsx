@@ -914,58 +914,94 @@ function whenText(t: number, at: number): string {
   return fmtClock(t, new Date(t).toDateString() !== new Date(at).toDateString())
 }
 
-/**
- * The usage figures, one row per entry so a caller can count them: the three
- * bars, or with "more" open the context breakdown and the limits with pace.
- */
-function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderChildren[] {
+const LABEL_W = 9
+
+/** One meter row: its label, the bar, the percentage, then dim figures on the right. */
+function usageRow(E: Els, v: View, label: string, pct: number | undefined, right: string, meter: Meter, cols: number, indent: number) {
   const { Text } = E
-  const { five, week, others } = limitsOf(v)
-  const labelW = 9
-  const indent = v.open ? 2 : 0
-  const row = (label: string, pct: number | undefined, right: string, meter: Meter) => {
-    const barW = Math.max(4, Math.min(32, cols - indent - labelW - 4 - (right ? right.length + 2 : 0)))
-    return (
-      <Text key={`use-${label}`} wrap="truncate-end">
-        <Text>{' '.repeat(indent)}</Text>
-        <Text bold color={v.t.meters[meter]}>
-          {label.padEnd(labelW)}
-        </Text>
-        {Bar(E, pct, barW, v.t, meter)}
-        {Pct(E, pct)}
-        {right ? <Text dimColor>  {right}</Text> : null}
+  const barW = Math.max(4, Math.min(32, cols - indent - LABEL_W - 4 - (right ? right.length + 2 : 0)))
+  return (
+    <Text key={`use-${label}`} wrap="truncate-end">
+      <Text>{' '.repeat(indent)}</Text>
+      <Text bold color={v.t.meters[meter]}>
+        {label.padEnd(LABEL_W)}
       </Text>
-    )
-  }
-  const head = (label: string) => (
-    <Text key={`head-${label}`} bold color={accent(v.t)}>
+      {Bar(E, pct, barW, v.t, meter)}
+      {Pct(E, pct)}
+      {right ? <Text dimColor>  {right}</Text> : null}
+    </Text>
+  )
+}
+
+function usageHead(E: Els, v: View, label: string) {
+  const { Text } = E
+  return (
+    <Text key={`head-${label}`} bold color={accent(v.t)} wrap="truncate-end">
       ◆ {label}
     </Text>
   )
-  const tokens = v.u?.ctxTokens !== undefined ? `${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : ''
-  const limits: RenderChildren[] = []
-  const limit = (label: string, l: HudLimit | undefined, withDay: boolean) => {
-    limits.push(row(label, l?.percentUsed, resetText(l, v.at, withDay), l?.kind === 'five_hour' || label === '5-hour' ? 1 : 2))
-    const pl = v.open && l ? PaceLine(E, l, v.at, indent + labelW) : null
-    if (pl) limits.push(pl)
-  }
-  limit('5-hour', five, false)
-  limit('Weekly', week, true)
-  for (const l of others) limit(LIMIT_LABEL[l.kind] ?? l.kind, l, true)
-  const none = !five && !week ? [<Text dimColor>{' '.repeat(indent)}Plan limits arrive with the next response.</Text>] : []
-  if (!v.open) return [row('Context', v.u?.ctxPercent, tokens, 0), ...limits, ...none]
+}
 
-  const cats = (v.b?.categories ?? []).filter(c => c.tokens > 0).sort((a, b) => b.tokens - a.tokens)
-  const catMax = Math.max(1, ...cats.map(c => c.tokens))
-  const catW = Math.max(6, Math.min(14, cols - 20))
+/** The plan limits, a pace line under each when `withPace`; a note while none have arrived. */
+function limitLines(E: Els, v: View, cols: number, indent: number, withPace: boolean): RenderChildren[] {
+  const { Text } = E
+  const { five, week, others } = limitsOf(v)
+  const out: RenderChildren[] = []
+  const limit = (label: string, l: HudLimit | undefined, withDay: boolean, meter: Meter) => {
+    out.push(usageRow(E, v, label, l?.percentUsed, resetText(l, v.at, withDay), meter, cols, indent))
+    const pl = withPace && l ? PaceLine(E, l, v.at, indent + LABEL_W) : null
+    if (pl) out.push(pl)
+  }
+  limit('5-hour', five, false, 1)
+  limit('Weekly', week, true, 2)
+  for (const l of others) limit(LIMIT_LABEL[l.kind] ?? l.kind, l, true, 2)
+  if (!five && !week) {
+    out.push(
+      <Text key="no-limits" dimColor wrap="truncate-end">
+        {' '.repeat(indent)}Plan limits arrive with the next response.
+      </Text>,
+    )
+  }
+  return out
+}
+
+function ctxTokens(v: View): string {
+  return v.u?.ctxTokens !== undefined ? `${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : ''
+}
+
+/** The Context meter with "more" open: tokens and the autocompact point, on one row or two. */
+function ctxLines(E: Els, v: View, cols: number, indent: number): RenderChildren[] {
+  const { Text } = E
+  const tokens = ctxTokens(v)
   const compact = v.b?.autoCompactAt ? `autocompact at ${fmtTokens(v.b.autoCompactAt)}` : v.b && !v.b.isAutoCompact ? 'autocompact off' : ''
   const ctxRight = [tokens, compact].filter(Boolean).join(' · ')
   return [
-    ...(where === 'panel' ? [head('CONTEXT WINDOW')] : []),
-    row('Context', v.u?.ctxPercent, cols >= 60 ? ctxRight : tokens, 0),
-    ...(cols < 60 && compact ? [<Text key="compact-at" dimColor>{' '.repeat(indent + labelW)}{compact}</Text>] : []),
-    ...(cats.length === 0 ? [<Text dimColor>{' '.repeat(indent + 2)}Measuring what fills the window…</Text>] : []),
-    ...cats.map((c, i) => {
+    usageRow(E, v, 'Context', v.u?.ctxPercent, cols >= 60 ? ctxRight : tokens, 0, cols, indent),
+    ...(cols < 60 && compact ? [<Text key="compact-at" dimColor>{' '.repeat(indent + LABEL_W)}{compact}</Text>] : []),
+  ]
+}
+
+/**
+ * What fills the context window, largest first, in at most `max` rows: past that
+ * the smallest fold into one "n more" row, so the list never outgrows its room.
+ */
+function catLines(E: Els, v: View, cols: number, indent: number, max = Infinity): RenderChildren[] {
+  const { Text } = E
+  if (max < 1) return []
+  const cats = (v.b?.categories ?? []).filter(c => c.tokens > 0).sort((a, b) => b.tokens - a.tokens)
+  if (cats.length === 0) {
+    return [
+      <Text key="cat-measuring" dimColor wrap="truncate-end">
+        {' '.repeat(indent + 2)}Measuring what fills the window…
+      </Text>,
+    ]
+  }
+  const catMax = Math.max(1, ...cats.map(c => c.tokens))
+  const catW = Math.max(6, Math.min(14, cols - 20))
+  const shown = cats.length <= max ? cats : cats.slice(0, max - 1)
+  const rest = cats.slice(shown.length)
+  return [
+    ...shown.map((c, i) => {
       const n = Math.max(1, Math.round((c.tokens / catMax) * catW))
       return (
         <Text key={`cat-${c.name}`} wrap="truncate-end">
@@ -977,14 +1013,48 @@ function usageLines(E: Els, v: View, cols: number, where: HudPlacement): RenderC
         </Text>
       )
     }),
-    head('PLAN LIMITS'),
-    ...none,
-    ...limits,
+    ...(rest.length
+      ? [
+          <Text key="cat-rest" dimColor wrap="truncate-end">
+            {' '.repeat(indent + 2 + catW)} {fmtTokens(rest.reduce((n, c) => n + c.tokens, 0)).padStart(5)} {rest.length} smaller
+          </Text>,
+        ]
+      : []),
   ]
 }
 
-function expandedBand(E: Els, v: View, cols: number, $: EngineInterface) {
+/**
+ * The panel's usage figures, one row per entry so a caller can count them: the
+ * three bars, or with "more" open the context breakdown and the limits with pace.
+ */
+function usageLines(E: Els, v: View, cols: number): RenderChildren[] {
+  if (!v.open) return [usageRow(E, v, 'Context', v.u?.ctxPercent, ctxTokens(v), 0, cols, 0), ...limitLines(E, v, cols, 0, false)]
+  return [
+    usageHead(E, v, 'CONTEXT WINDOW'),
+    ...ctxLines(E, v, cols, 2),
+    ...catLines(E, v, cols, 2),
+    usageHead(E, v, 'PLAN LIMITS'),
+    ...limitLines(E, v, cols, 2, true),
+  ]
+}
+
+/**
+ * The band with "more" open, fitted to the `maxRows` the engine gives it, since a
+ * taller tree only shows behind an "n more" row the person has to scroll. A wide band
+ * sets the context and the limits side by side; whatever still doesn't fit folds the
+ * smallest context categories into one row, then drops the pace lines.
+ */
+function expandedBand(E: Els, v: View, cols: number, maxRows: number, $: EngineInterface) {
   const { Box, Text } = E
+  const two = cols >= 100
+  const colW = two ? Math.floor((cols - 3) / 2) : cols
+  const ctx = ctxLines(E, v, colW, 2)
+  const limits = (withPace: boolean) => [usageHead(E, v, 'PLAN LIMITS'), ...limitLines(E, v, colW, 2, withPace)]
+  // The title row, then the context rows; one column also stacks the limits under them.
+  const fixed = (r: RenderChildren[]) => 1 + ctx.length + (two ? 0 : r.length)
+  const fits = (r: RenderChildren[]) => (two ? 1 + r.length : fixed(r) + 1) <= maxRows
+  const right = fits(limits(true)) ? limits(true) : limits(false)
+  const left = [...ctx, ...catLines(E, v, colW, 2, Math.max(1, maxRows - fixed(right)))]
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" justifyContent="space-between">
@@ -993,7 +1063,18 @@ function expandedBand(E: Els, v: View, cols: number, $: EngineInterface) {
         </Text>
         {UsageButtons(E, v, $, cols, 'band')}
       </Box>
-      {usageLines(E, v, cols, 'band')}
+      {two ? (
+        <Box flexDirection="row" gap={3}>
+          <Box flexDirection="column" width={colW} flexShrink={0}>
+            {left}
+          </Box>
+          <Box flexDirection="column" width={colW} flexShrink={0}>
+            {right}
+          </Box>
+        </Box>
+      ) : (
+        [...left, ...right]
+      )}
     </Box>
   )
 }
@@ -1022,7 +1103,7 @@ function FooterRule(E: Els, cols: number): RenderChildren {
 /** The panel's foot: a rule, the usage lines, then the settings row. */
 function panelFooter(E: Els, v: View, cols: number, $: EngineInterface): { node: RenderChildren; rows: number } {
   const { Box } = E
-  const lines = usageLines(E, v, cols, 'panel')
+  const lines = usageLines(E, v, cols)
   return {
     rows: lines.length + 2,
     node: (
@@ -1512,7 +1593,7 @@ export const register: Register = on => {
     const E = $.ui.resolve(e)
     const v = await view($, e.surface)
     const cols = Math.max(40, e.props.bodyColumns)
-    return v.open ? expandedBand(E, v, cols, $) : compactBand(E, v, cols, $)
+    return v.open ? expandedBand(E, v, cols, e.props.maxRows, $) : compactBand(E, v, cols, $)
   })
 
   // While the cards outgrow the panel, the header, this session and the footer
@@ -1531,8 +1612,8 @@ export const register: Register = on => {
     const { Box } = E
     const [seen, moving, version] = await Promise.all([view($, e.surface), read($, motion), pluginVersion($)])
     const base = { ...seen, f: moving ? await read($, frame) : 0 }
-    // One column of gutter off the divider the engine draws against the chat.
-    const cols = Math.max(24, e.props.bodyColumns - GUTTER)
+    // A column of gutter on each side, so no text runs against the divider or the pane's far edge.
+    const cols = Math.max(24, e.props.bodyColumns - 2 * GUTTER)
     const branch = base.isLanes ? 'orchestrator' : (base.l.repo?.split('/').pop() ?? 'main')
     const budget = e.props.scroll.bodyRows
     let v = base
@@ -1568,7 +1649,7 @@ export const register: Register = on => {
     return (
       // A docked pane's body doesn't size its tree, so "100%" would collapse to the
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
-      <Box flexDirection="column" paddingLeft={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
+      <Box flexDirection="column" paddingLeft={GUTTER} paddingRight={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
         {Header(E, v, cols, version)}
         {mainCard(E, v, cols, branch)}
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
