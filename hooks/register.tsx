@@ -1193,13 +1193,52 @@ function oneRowBars(E: Els, v: View, cols: number): RenderChildren {
 }
 
 /**
+ * The shut panel's usage in two rows: CTX and its tokens on top, 5H and 7D side by side
+ * under it, one bar length for all three. The countdowns drop before the bars go under 4.
+ */
+function twoRowBars(E: Els, v: View, cols: number): RenderChildren[] {
+  const { Text } = E
+  const { five, week } = limitsOf(v)
+  const countdown = (l?: HudLimit) => {
+    const t = l?.resetsAt ? Date.parse(l.resetsAt) : NaN
+    return Number.isFinite(t) ? `↻ ${fmtDur(t - v.at)}` : ''
+  }
+  const r5 = countdown(five)
+  const r7 = countdown(week)
+  // "5H  " bar " 25%" " ↻ 2h 10m", two cells, "7D  " bar " 25%" " ↻ 3d 22h"
+  const fixed = (resets: boolean) => 4 + 4 + 2 + 4 + 4 + (resets ? (r5 ? r5.length + 1 : 0) + (r7 ? r7.length + 1 : 0) : 0)
+  const resets = Math.floor((cols - fixed(true)) / 2) >= 4
+  const barW = Math.max(3, Math.min(16, Math.floor((cols - fixed(resets)) / 2)))
+  const gauge = (label: string, pct: number | undefined, right: string, meter: Meter, lead = '') => (
+    <Text key={`g-${label}`}>
+      {lead}
+      <Text bold color={v.t.meters[meter]}>
+        {label.padEnd(4)}
+      </Text>
+      {Bar(E, pct, barW, v.t, meter)}
+      {Pct(E, pct)}
+      {right ? <Text dimColor> {right}</Text> : null}
+    </Text>
+  )
+  return [
+    <Text key="use-ctx" wrap="truncate-end">
+      {gauge('CTX', v.u?.ctxPercent, ctxTokens(v), 0)}
+    </Text>,
+    <Text key="use-limits" wrap="truncate-end">
+      {gauge('5H', five?.percentUsed, resets ? r5 : '', 1)}
+      {gauge('7D', week?.percentUsed, resets ? r7 : '', 2, '  ')}
+    </Text>,
+  ]
+}
+
+/**
  * The panel's usage figures, one row per entry so a caller can count them: the three
- * bars on one row, or with "more" open the context breakdown and the limits with pace,
+ * bars in two rows, or with "more" open the context breakdown and the limits with pace,
  * cut to `max` rows: the categories fold first, then the section heads and context
  * figures, then the pace lines, so the limits are the last to go.
  */
 function usageLines(E: Els, v: View, cols: number, max = Infinity): RenderChildren[] {
-  if (!v.open) return [oneRowBars(E, v, cols)]
+  if (!v.open) return twoRowBars(E, v, cols)
   const limits = limitLines(E, v, cols, 2, { detail: true, withPace: true })
   const ctx = ctxLines(E, v, cols, 2)
   const fixed = 2 + ctx.length + limits.length
@@ -1819,6 +1858,9 @@ export const register: Register = on => {
     return {}
   })
 
+  /** The rows last asked of an inline pane, so a draw re-asks only when the need changes. */
+  let askedRows = INLINE_ROWS
+
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     ensureTimers($)
     const E = $.ui.resolve(e)
@@ -1829,57 +1871,93 @@ export const register: Register = on => {
     const cols = Math.max(24, e.props.bodyColumns - 2 * GUTTER)
     const branch = base.isLanes ? 'orchestrator' : (base.l.repo?.split('/').pop() ?? 'main')
     const budget = e.props.scroll.bodyRows
-    let v = base
-    let items: Item[] = []
-    let room = 0
     const inline = e.props.placement === 'inline'
-    const headRows = inline ? 1 : 2
-    // Under the chat a 10-row pane can't hold "more" and the cards too: "more" asked for
-    // the usage, so it takes the pane and the cards come back with "less".
-    const usageOnly = inline && base.where === 'panel' && base.open
-    const footMax = usageOnly ? budget - headRows : budget - headRows - CARD_ROWS[1] - 1
-    const foot = base.where === 'panel' ? panelFooter(E, base, cols, $, footMax) : undefined
-    // Never below two-line cards: a one-row avatar is too flat to read as a face, and one
-    // line can't hold the status beside the name. Past that, the cards scroll.
-    for (const density of [0, 1] as const) {
-      v = { ...base, density }
-      items = base.isLanes ? laneItems(E, v, cols, $) : agentItems(E, v, cols, $)
-      room = Math.max(1, budget - headRows - CARD_ROWS[density] - (foot?.rows ?? 0))
-      if (items.reduce((n, i) => n + i.rows, 0) <= room) break
-    }
-    // Every card has now said how wide a bar its text leaves: draw them all at the narrowest.
-    mainCard(E, v, cols, branch)
-    v.bar.cap = v.bar.min
-    items = base.isLanes ? laneItems(E, v, cols, $) : agentItems(E, v, cols, $)
-    const total = items.reduce((n, i) => n + i.rows, 0)
-    scrolling.active = !usageOnly && total > room
-    scrolling.max = Math.max(0, total - room)
-    scrolling.window = room
-    const offset = scrolling.active ? Math.min(await read($, skip), scrolling.max) : 0
-    // A card cut by an edge shows the rows inside the window, shifted up in a clipping box.
-    const body = cardWindow(items.map(i => i.rows), offset, room).map(({ index, cutTop, shown }) => {
-      const i = items[index]!
-      return shown === i.rows ? (
-        i.node
-      ) : (
-        <Box key={`clip-${index}`} flexDirection="column" flexShrink={0} height={shown} overflow="hidden">
-          <Box flexDirection="column" flexShrink={0} position="relative" top={-cutTop}>
-            {i.node}
+    // Under the chat the pane is short and wide: the usage takes a left column and the
+    // cards a right one, so neither pushes the other off. Too narrow for two, it stacks.
+    const split = inline && base.where === 'panel' && cols >= 80
+
+    /** The cards that fit `room` rows (the main card's too) at `width`, scrolled. */
+    const cards = async (width: number, rows: number) => {
+      let v = base
+      let items: Item[] = []
+      let room = 0
+      // Never below two-line cards: a one-row avatar is too flat to read as a face, and one
+      // line can't hold the status beside the name. Past that, the cards scroll.
+      for (const density of [0, 1] as const) {
+        v = { ...base, density }
+        items = base.isLanes ? laneItems(E, v, width, $) : agentItems(E, v, width, $)
+        room = Math.max(1, rows - CARD_ROWS[density])
+        if (items.reduce((n, i) => n + i.rows, 0) <= room) break
+      }
+      // Every card has now said how wide a bar its text leaves: draw them all at the narrowest.
+      mainCard(E, v, width, branch)
+      v.bar.cap = v.bar.min
+      items = base.isLanes ? laneItems(E, v, width, $) : agentItems(E, v, width, $)
+      const total = items.reduce((n, i) => n + i.rows, 0)
+      scrolling.active = total > room
+      scrolling.max = Math.max(0, total - room)
+      scrolling.window = room
+      const offset = scrolling.active ? Math.min(await read($, skip), scrolling.max) : 0
+      // A card cut by an edge shows the rows inside the window, shifted up in a clipping box.
+      const body = cardWindow(items.map(i => i.rows), offset, room).map(({ index, cutTop, shown }) => {
+        const i = items[index]!
+        return shown === i.rows ? (
+          i.node
+        ) : (
+          <Box key={`clip-${index}`} flexDirection="column" flexShrink={0} height={shown} overflow="hidden">
+            <Box flexDirection="column" flexShrink={0} position="relative" top={-cutTop}>
+              {i.node}
+            </Box>
           </Box>
+        )
+      })
+      return { v, main: mainCard(E, v, width, branch), body }
+    }
+
+    if (split) {
+      const left = Math.max(36, Math.min(60, Math.floor(cols * 0.45)))
+      const right = cols - left - 3
+      const full = usageLines(E, base, left)
+      // "more" asks the pane for every row its figures take, so none is cut or scrolled;
+      // "less" goes back to the short pane. A size the person dragged still wins.
+      const want = base.open ? Math.max(INLINE_ROWS, full.length + 2) : INLINE_ROWS
+      if (want !== askedRows) {
+        askedRows = want
+        void $.ui.open({ ...OPEN, rows: want }).catch(() => undefined)
+      }
+      const rows = Math.max(2, budget - 2)
+      const stats = full.length <= rows ? full : usageLines(E, base, left, rows)
+      const c = await cards(right, rows)
+      return (
+        <Box flexDirection="column" paddingLeft={GUTTER} paddingRight={GUTTER}>
+          {Header(E, c.v, cols, version, 0)}
+          <Box flexDirection="row" height={rows} overflow="hidden">
+            <Box flexDirection="column" width={left} flexShrink={0}>
+              {stats}
+            </Box>
+            <Box width={3} flexShrink={0} />
+            <Box flexDirection="column" flexGrow={1} overflow="hidden">
+              {c.main}
+              {c.body}
+            </Box>
+          </Box>
+          {UsageButtons(E, c.v, $, cols, 'panel')}
         </Box>
       )
-    })
+    }
+
+    const headRows = inline ? 1 : 2
+    const foot = base.where === 'panel' ? panelFooter(E, base, cols, $, budget - headRows - CARD_ROWS[1] - 1) : undefined
+    const c = await cards(cols, budget - headRows - (foot?.rows ?? 0))
     return (
       // A docked pane's body doesn't size its tree, so "100%" would collapse to the
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
       <Box flexDirection="column" paddingLeft={GUTTER} paddingRight={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
-        {Header(E, v, cols, version, headRows - 1)}
-        {usageOnly ? null : mainCard(E, v, cols, branch)}
-        {usageOnly ? null : (
-          <Box flexDirection="column" flexGrow={1} overflow="hidden">
-            {body}
-          </Box>
-        )}
+        {Header(E, c.v, cols, version, headRows - 1)}
+        {c.main}
+        <Box flexDirection="column" flexGrow={1} overflow="hidden">
+          {c.body}
+        </Box>
         {foot?.node}
       </Box>
     )
