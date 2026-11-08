@@ -550,3 +550,22 @@ for (const bodyRows of [14, 20]) {
     await ui.unmount()
   })
 }
+
+// Above the prompt in a narrow chat column the settings row crowded 7D off the band.
+for (const bodyColumns of [60, 78, 120]) {
+  test(`the band above the prompt shows CTX, 5H and 7D at ${bodyColumns} columns`, async ($, on) => {
+    engine(on)
+    on('store.get', () => ({ value: undefined }))
+    on('store.set', () => ({ value: undefined }))
+    await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+    const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    await pane.press({ key: 'hud-move' })
+    await pane.unmount()
+    const band = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns } })
+    const row = await band.find({ type: 'Text', text: /^CTX +[█▏▎▍▌▋▊▉░]+.*5H +[█▏▎▍▌▋▊▉░]+.*7D +[█▏▎▍▌▋▊▉░]+ +\d+%/ })
+    expect(row).toBeTruthy()
+    expect(row!.text.length).toBeLessThanOrEqual(bodyColumns)
+    expect(await band.find({ type: 'Button', key: 'hud-more' })).toBeTruthy()
+    await band.unmount()
+  })
+}

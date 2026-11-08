@@ -907,40 +907,25 @@ function UsageButtons(E: Els, v: View, $: EngineInterface, cols: number, where: 
   )
 }
 
-/** CTX, 5H and 7D on one row, short bars, figures beside them. */
-function gaugeRow(E: Els, v: View, cols: number) {
-  const { Box, Text } = E
-  const { five, week } = limitsOf(v)
-  const barW = cols >= 140 ? 12 : cols >= 110 ? 9 : cols >= 90 ? 6 : 4
-  const gauge = (label: string, pct: number | undefined, suffix: string, meter: Meter) => (
-    <Text wrap="truncate-end">
-      <Text bold color={v.t.meters[meter]}>
-        {label}{' '}
-      </Text>
-      {Bar(E, pct, barW, v.t, meter)}
-      {Pct(E, pct)}
-      {suffix ? <Text dimColor> {suffix}</Text> : null}
-    </Text>
-  )
-  const reset = (l?: HudLimit) => {
-    const t = l?.resetsAt ? Date.parse(l.resetsAt) : NaN
-    return Number.isFinite(t) && cols >= 100 ? `↻ ${fmtDur(t - v.at)}` : ''
-  }
-  const ctx = v.u?.ctxTokens !== undefined && cols >= 100 ? `${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : ''
-  return (
-    <Box flexDirection="row" gap={3} flexShrink={1}>
-      {gauge('CTX', v.u?.ctxPercent, ctx, 0)}
-      {gauge('5H', five?.percentUsed, reset(five), 1)}
-      {cols >= 80 ? gauge('7D', week?.percentUsed, reset(week), 2) : null}
-    </Box>
-  )
+/** The settings row's width in cells, as UsageButtons draws it (an emoji takes two). */
+function buttonsWidth(v: View, cols: number, where: HudPlacement): number {
+  const labels = [v.open ? '▾ less' : '▴ more', `🎨 ${v.t.name}`, where === 'panel' || cols >= 90 ? `☺ ${v.style}` : '', where === 'band' ? '◫ panel' : '', where === 'panel' ? '⇠ to chat' : '⇢ to panel'].filter(Boolean)
+  return labels.reduce((n, l) => n + [...l].length + (l.startsWith('🎨') ? 1 : 0), 0) + 2 * (labels.length - 1)
 }
 
+/**
+ * The band above the prompt: CTX, 5H and 7D on one row beside the settings. Where the
+ * buttons would leave the bars too little room (7D used to drop off there), the bars
+ * take the row and the buttons go under them.
+ */
 function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
   const { Box } = E
+  const room = cols - buttonsWidth(v, cols, 'band') - 2
+  // Three 4-cell bars with their labels and percentages, two cells apart.
+  const oneRow = room >= 38
   return (
-    <Box flexDirection="row" justifyContent="space-between" gap={2}>
-      {gaugeRow(E, v, cols)}
+    <Box flexDirection={oneRow ? 'row' : 'column'} justifyContent="space-between" gap={oneRow ? 2 : 0}>
+      {oneRowBars(E, v, oneRow ? room : cols)}
       {UsageButtons(E, v, $, cols, 'band')}
     </Box>
   )
