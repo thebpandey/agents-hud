@@ -28,6 +28,8 @@ const BAND = {
 
 /** How many times the mod asked for its pane; reset per test. */
 const opened = { count: 0, rows: [] as unknown[] }
+/** The toasts the mod raised, newest last. */
+const toasts: string[] = []
 
 const REPO = '/home/me/dev/proj'
 // Lanes registered earlier, with nothing in this session; listed before the live one.
@@ -39,6 +41,7 @@ const WT = `${REPO}/.claude/worktrees/lane-a1-auth`
 function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0, longDesc = '', unlisted: Set<string> = new Set()) {
   const clock = mock.clock(on)
   on('command.register', () => ({ value: { command: 'agents-hud' } }))
+  on('ui.toast', (_$, e) => (toasts.push(e.text), { value: undefined }))
   on('ui.open', (_$, e) => (opened.count++, opened.rows.push(e.rows), { value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: REPO }))
@@ -129,19 +132,20 @@ for (const surface of ['terminal', 'desktop'] as const) {
     expect(new Set(labels.map(x => x?.props.color)).size).toBe(3)
 
     // The detail opens upward, above the bars: "more" points up, "less" back down.
-    expect(await ui.find({ type: 'Button', label: /^▴ more$/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', label: /^▴$/ })).toBeTruthy()
     await ui.press({ key: 'hud-more' })
-    expect(await ui.find({ type: 'Button', label: /^▾ less$/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Button', label: /^▾$/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /CONTEXT WINDOW/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /30k Messages/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /autocompact at 187k/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /Free space/ })).toBeFalsy()
     expect(await ui.find({ type: 'Text', text: /Resets before you'd run out/ })).toBeTruthy()
 
+    // The buttons are bare icons; a press names what it switched to in a toast.
     await ui.press({ key: 'hud-avatars' })
-    expect(await ui.find({ type: 'Button', label: /cats/ })).toBeTruthy()
+    expect(toasts.at(-1)).toMatch(/avatars: cats/)
     await ui.press({ key: 'hud-theme' })
-    expect(await ui.find({ type: 'Button', label: /Ember/ })).toBeTruthy()
+    expect(toasts.at(-1)).toMatch(/theme: Ember/)
 
     await ui.press({ key: 'hud-move' })
     expect(await ui.find({ type: 'Text', text: /(5-hour|5H) .*14%/ })).toBeFalsy()
@@ -502,7 +506,7 @@ test('under the chat, the usage sits left and the agents right, in 10 rows', asy
   expect(height(tree)).toBeLessThanOrEqual(10)
   expect(sideBySide(tree, /CTX/, /docs pass/)).toBe(true)
   expect((await rowBars(ui)).bars).toHaveLength(3)
-  expect((await ui.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')?.props.label).toBe('▴ more')
+  expect((await ui.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')?.props.label).toBe('▴')
   await ui.unmount()
 })
 
@@ -529,7 +533,7 @@ test('under the chat, "more" asks for every row its figures take, keeps the agen
   expect(await tall.find({ type: 'Text', text: /Extra 9/ })).toBeTruthy()
   expect(await tall.find({ type: 'Text', text: /Resets before you'd run out/ })).toBeTruthy()
   expect(sideBySide(tree, /Extra 9/, /docs pass/)).toBe(true)
-  expect((await tall.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')?.props.label).toBe('▾ less')
+  expect((await tall.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')?.props.label).toBe('▾')
   await tall.press({ key: 'hud-more' })
   await tall.drawn()
   expect(opened.rows.at(-1)).toBe(10)
@@ -546,7 +550,7 @@ for (const bodyRows of [14, 20]) {
     await ui.press({ key: 'hud-more' })
     expect(height(await ui.drawn())).toBeLessThanOrEqual(bodyRows)
     const less = (await ui.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')
-    expect(less?.props.label).toBe('▾ less')
+    expect(less?.props.label).toBe('▾')
     await ui.unmount()
   })
 }
@@ -569,3 +573,29 @@ for (const bodyColumns of [60, 78, 120]) {
     await band.unmount()
   })
 }
+
+// The limits are what the band is for: icons-only settings leave the bars the row, and
+// theme and avatars give up their cells before any bar does.
+test('the band keeps all three bars long beside icon-only buttons, and drops theme and avatars before a bar', async ($, on) => {
+  engine(on)
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const pane = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  await pane.press({ key: 'hud-move' })
+  await pane.unmount()
+  const wide = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 100 } })
+  const labels = (await wide.findAll({ type: 'Button' })).map(b => b.props.label)
+  expect(labels).toEqual(['▴', '🎨', '☺', '◫', '⇢'])
+  const row = (await wide.find({ type: 'Text', text: /^CTX / }))!.text
+  const bars = [...row.matchAll(/(CTX|5H|7D) +([█▏▎▍▌▋▊▉░]+)/g)].map(m => m[2]!.length)
+  expect(bars).toHaveLength(3)
+  expect(bars[0]).toBeGreaterThanOrEqual(8)
+  await wide.unmount()
+  const narrow = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 52 } })
+  const keys = (await narrow.findAll({ type: 'Button' })).map(b => b.key)
+  expect(keys).not.toContain('hud-theme')
+  expect(keys).not.toContain('hud-avatars')
+  expect(await narrow.find({ type: 'Text', text: /^CTX .*5H .*7D +[█▏▎▍▌▋▊▉░]+ +\d+%/ })).toBeTruthy()
+  await narrow.unmount()
+})

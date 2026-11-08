@@ -44,14 +44,14 @@ If you already installed the mod from a terminal at the user scope on the same c
 ### Opening the panel
 
 - **CLI:** the panel opens by itself beside the chat in fullscreen mode, or when your terminal is at least 144 columns wide. In a narrower terminal, run `/agents-hud` to open it.
-- **Beside the chat or under it:** Claude Code docks the panel beside the chat only in fullscreen mode at 110 columns or wider (a Claude Code rule the mod can't change). Narrower, it sits under the chat: usage stats on the left, agents and lanes on the right, 10 rows tall. `▴ more` shows every stat in that left column, figures beside the bars, and asks Claude Code for the rows that takes; `▾ less` asks for 10 again. A height you dragged the panel to overrides both, and Claude Code keeps it, so after a drag resize it by hand. To keep it beside the chat in a narrow window, shrink the terminal font until the window is 110 columns wide.
+- **Beside the chat or under it:** Claude Code docks the panel beside the chat only in fullscreen mode at 110 columns or wider (a Claude Code rule the mod can't change). Narrower, it sits under the chat: usage stats on the left, agents and lanes on the right, 10 rows tall. `▴` shows every stat in that left column, figures beside the bars, and asks Claude Code for the rows that takes; `▾` asks for 10 again. A height you dragged the panel to overrides both, and Claude Code keeps it, so after a drag resize it by hand. To keep it beside the chat in a narrow window, shrink the terminal font until the window is 110 columns wide.
 - **Desktop app:** the panel opens on your first prompt of each session. To open it sooner, or after you close it, run `/agents-hud`.
 
 If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
-- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.22`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.23`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active. A finished agent stays as long as Claude Code still lists it, and leaves the panel 10 minutes after Claude Code stops listing it. A finished relay or Codex job leaves 10 minutes after it ends.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
@@ -70,18 +70,18 @@ The bottom of the panel shows three bars in two rows, CTX on top and 5H beside 7
 | **5H** | Your 5-hour plan limit, with a reset countdown |
 | **7D** | Your weekly plan limit, with a reset countdown |
 
-In a narrow panel the bars shorten, then the countdowns go. The reset day and time are in `▴ more`.
+In a narrow panel the bars shorten, then the countdowns go. The reset day and time are in `▴`.
 
 Any bar turns amber at 60% and red at 85%.
 
-The row under the bars holds the settings:
+The row under the bars holds the settings, as bare icons so the usage bars keep the room:
 
 | Button | What it does |
 |---|---|
-| `▴ more` / `▾ less` | Opens a detailed view above the bars: what fills the context window (messages, system tools, skills, memory files), where autocompact starts, and a pace line under each limit, such as "⚠ At this pace you'll run out by 4:12 PM" or "✓ Resets before you'd run out". Every usage bar is drawn at one length so they compare at a glance: in this view each bar's figures (tokens, reset time) sit on the line under it. In a short panel the view trims itself so `▾ less` always shows: the context categories fold first, then the pace lines. Under the chat, the view takes the whole 10 rows and the agent cards come back with `▾ less`. Above the prompt it fits on screen without scrolling: a wide terminal sets the context and the limits side by side, and a short one folds the smallest context categories into one "N smaller" row |
-| `🎨 Claude` | Switches to the next colour theme |
-| `☺ robots` | Switches to the next avatar style |
-| `⇠ to chat` | Moves the usage stats to a band above the prompt, under the chat. There, `⇢ to panel` moves them back, and `◫ panel` opens or closes the side panel |
+| `▴` / `▾` | More or less: opens a detailed view above the bars: what fills the context window (messages, system tools, skills, memory files), where autocompact starts, and a pace line under each limit, such as "⚠ At this pace you'll run out by 4:12 PM" or "✓ Resets before you'd run out". Every usage bar is drawn at one length so they compare at a glance: in this view each bar's figures (tokens, reset time) sit on the line under it. In a short panel the view trims itself so `▾` always shows: the context categories fold first, then the pace lines. Under the chat, the view takes the whole 10 rows and the agent cards come back with `▾`. Above the prompt it fits on screen without scrolling: a wide terminal sets the context and the limits side by side, and a short one folds the smallest context categories into one "N smaller" row |
+| `🎨` | Switches to the next colour theme, and names it in a toast |
+| `☺` | Switches to the next avatar style, and names it in a toast |
+| `⇠` | Moves the usage stats to a band above the prompt, under the chat. There, `⇢` moves them back, and `◫` opens or closes the side panel. In a narrow chat column the band drops `🎨` and `☺` before any bar shortens past 4 cells |
 
 Themes: Claude, Ember, Amber, Harbor, Forest, Bone, Wine, and Terminal, which uses your terminal's own colours and suits light backgrounds.
 

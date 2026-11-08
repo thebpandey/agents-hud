@@ -893,24 +893,43 @@ function limitsOf(v: View) {
   }
 }
 
-function UsageButtons(E: Els, v: View, $: EngineInterface, cols: number, where: HudPlacement) {
+/**
+ * The settings, as bare icons so the usage bars keep the room: ▴/▾ more or less,
+ * 🎨 theme, ☺ avatars, ◫ side panel (band only), ⇠/⇢ usage to the chat or the panel.
+ * Pressing theme or avatars toasts the new name, since the icon no longer says it.
+ * `lean` drops theme and avatars, the first to go when the bars need the cells.
+ */
+function UsageButtons(E: Els, v: View, $: EngineInterface, cols: number, where: HudPlacement, lean = false) {
   const { Box, Button } = E
-  const isOpen = v.open
   return (
     <Box flexDirection="row" gap={2} flexShrink={0}>
-      <Button key="hud-more" plain label={isOpen ? '▾ less' : '▴ more'} onPress={() => void toggleBand($, cols)} />
-      <Button key="hud-theme" plain label={`🎨 ${v.t.name}`} onPress={() => void nextTheme($)} />
-      {where === 'panel' || cols >= 90 ? <Button key="hud-avatars" plain label={`☺ ${v.style}`} onPress={() => void nextAvatars($)} /> : null}
-      {where === 'band' ? <Button key="hud-panel" plain label="◫ panel" onPress={() => void togglePanel($)} /> : null}
-      <Button key="hud-move" plain label={where === 'panel' ? '⇠ to chat' : '⇢ to panel'} onPress={() => void movePlacement($)} />
+      <Button key="hud-more" plain label={v.open ? '▾' : '▴'} onPress={() => void toggleBand($, cols)} />
+      {lean ? null : (
+        <Button
+          key="hud-theme"
+          plain
+          label="🎨"
+          onPress={() => void nextTheme($).then(t => $.ui.toast(`Agents HUD theme: ${t.name}`))}
+        />
+      )}
+      {lean ? null : (
+        <Button
+          key="hud-avatars"
+          plain
+          label="☺"
+          onPress={() => void nextAvatars($).then(st => $.ui.toast(`Agents HUD avatars: ${st}`))}
+        />
+      )}
+      {where === 'band' ? <Button key="hud-panel" plain label="◫" onPress={() => void togglePanel($)} /> : null}
+      <Button key="hud-move" plain label={where === 'panel' ? '⇠' : '⇢'} onPress={() => void movePlacement($)} />
     </Box>
   )
 }
 
-/** The settings row's width in cells, as UsageButtons draws it (an emoji takes two). */
-function buttonsWidth(v: View, cols: number, where: HudPlacement): number {
-  const labels = [v.open ? '▾ less' : '▴ more', `🎨 ${v.t.name}`, where === 'panel' || cols >= 90 ? `☺ ${v.style}` : '', where === 'band' ? '◫ panel' : '', where === 'panel' ? '⇠ to chat' : '⇢ to panel'].filter(Boolean)
-  return labels.reduce((n, l) => n + [...l].length + (l.startsWith('🎨') ? 1 : 0), 0) + 2 * (labels.length - 1)
+/** The settings row's width in cells, as UsageButtons draws it (the palette emoji takes two). */
+function buttonsWidth(where: HudPlacement, lean = false): number {
+  const icons = 2 + (lean ? 0 : 2) + (where === 'band' ? 1 : 0)
+  return icons + (lean ? 0 : 1) + 2 * (icons - 1)
 }
 
 /**
@@ -920,13 +939,16 @@ function buttonsWidth(v: View, cols: number, where: HudPlacement): number {
  */
 function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
   const { Box } = E
-  const room = cols - buttonsWidth(v, cols, 'band') - 2
-  // Three 4-cell bars with their labels and percentages, two cells apart.
+  // Three 4-cell bars with their labels and percentages, two cells apart, need 38 cells:
+  // theme and avatars give theirs up first, and only then do the buttons take a row.
+  const full = cols - buttonsWidth('band') - 2
+  const lean = full < 38
+  const room = lean ? cols - buttonsWidth('band', true) - 2 : full
   const oneRow = room >= 38
   return (
     <Box flexDirection={oneRow ? 'row' : 'column'} justifyContent="space-between" gap={oneRow ? 2 : 0}>
       {oneRowBars(E, v, oneRow ? room : cols)}
-      {UsageButtons(E, v, $, cols, 'band')}
+      {UsageButtons(E, v, $, cols, 'band', lean && oneRow)}
     </Box>
   )
 }
@@ -1153,10 +1175,12 @@ function oneRowBars(E: Els, v: View, cols: number): RenderChildren {
   ]
   const fits = (bar: number, tokens: boolean, resets: boolean) =>
     all.reduce((n, [label, , right], i) => n + label.length + 1 + bar + 4 + ((i === 0 ? tokens : resets) && right ? right.length + 1 : 0), 0) + 2 * (all.length - 1) <= cols
-  const tries: [number, boolean, boolean][] = [
-    [8, true, true], [6, true, true], [6, false, true], [4, false, true], [3, false, true], [6, false, false], [4, false, false],
-  ]
-  const [barW, tokens, resets] = tries.find(([b, t, r]) => fits(b, t, r)) ?? [3, false, false]
+  // The longest bar (up to 16) each set of figures leaves, in order of what's worth keeping.
+  const longest = (tokens: boolean, resets: boolean, min: number): [number, boolean, boolean] | undefined => {
+    for (let b = 16; b >= min; b--) if (fits(b, tokens, resets)) return [b, tokens, resets]
+    return undefined
+  }
+  const [barW, tokens, resets] = longest(true, true, 8) ?? longest(false, true, 3) ?? longest(false, false, 3) ?? [3, false, false]
   return (
     <Text key="use-row" wrap="truncate-end">
       {all.map(([label, pct, right, meter], i) => {
