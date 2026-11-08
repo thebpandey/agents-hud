@@ -25,7 +25,7 @@ const BAND = {
 } as const
 
 /** How many times the mod asked for its pane; reset per test. */
-const opened = { count: 0 }
+const opened = { count: 0, rows: [] as unknown[] }
 
 const REPO = '/home/me/dev/proj'
 // Lanes registered earlier, with nothing in this session; listed before the live one.
@@ -37,7 +37,7 @@ const WT = `${REPO}/.claude/worktrees/lane-a1-auth`
 function engine(on: Parameters<Parameters<typeof test>[1]>[1], crowd = 0, extraCats = 0, longDesc = '', unlisted: Set<string> = new Set()) {
   const clock = mock.clock(on)
   on('command.register', () => ({ value: { command: 'agents-hud' } }))
-  on('ui.open', () => (opened.count++, { value: { isPlaced: true } }))
+  on('ui.open', (_$, e) => (opened.count++, opened.rows.push(e.rows), { value: { isPlaced: true } }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: REPO }))
   on('session.model', () => ({ value: 'claude-opus-5-5' }))
@@ -443,5 +443,44 @@ test('a panel drawn without session.start, as after a reload, still refreshes on
   expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeFalsy()
   await clock.advance(11_000)
   expect(await ui.find({ type: 'Text', text: /look for usages/ })).toBeTruthy()
+  await ui.unmount()
+})
+
+// Under 110 columns, or off fullscreen, Claude Code seats the pane under the chat and,
+// unasked, gives it a third of the screen: on a ~975px window that left the chat too small.
+test('every open asks for a short pane, so under the chat it leaves the chat its room', async ($, on) => {
+  engine(on)
+  opened.rows = []
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  await $.command.run({ command: 'agents-hud', args: '' })
+  expect(opened.rows.length).toBeGreaterThan(1)
+  for (const r of opened.rows) expect(r).toBe(10)
+})
+
+test('seated under the chat in 10 rows, the pane fits them, bars on one row, an agent still shown', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  await $.agent.spawn({ prompt: 'Write the docs.', description: 'docs pass', subagentType: 'general-purpose' })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, placement: 'inline', bodyColumns: 108, scroll: { offset: 0, bodyRows: 10 } } })
+  expect(height(await ui.drawn())).toBeLessThanOrEqual(10)
+  expect(await ui.find({ type: 'Text', text: /docs pass/ })).toBeTruthy()
+  // CTX, 5H and 7D share a row rather than taking one each.
+  const row = (await ui.findAll({ type: 'Box' })).find(b => {
+    const t = JSON.stringify(b)
+    return /CTX/.test(t) && /5H/.test(t) && /7D/.test(t) && b.props.flexDirection === 'row'
+  })
+  expect(row).toBeTruthy()
+  await ui.unmount()
+})
+
+test('docked beside the chat, the pane keeps its full usage footer, one bar a row', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const row = (await ui.findAll({ type: 'Box' })).find(b => {
+    const t = JSON.stringify(b)
+    return /CTX/.test(t) && /5H/.test(t) && /7D/.test(t) && b.props.flexDirection === 'row'
+  })
+  expect(row).toBeFalsy()
   await ui.unmount()
 })

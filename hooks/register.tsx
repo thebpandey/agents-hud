@@ -29,6 +29,11 @@ const placement = atom({ plugin: 'agents-hud', key: 'placement' } as const, INIT
 
 const PANE = 'agents-hud'
 const TITLE = 'Agents'
+// Below 110 columns, or off fullscreen, Claude Code seats a pane inline under the chat
+// (it docks beside it only in fullscreen from 110). There it takes a third of the screen
+// unless asked otherwise, which buries the chat: ask for this many body rows instead.
+const INLINE_ROWS = 10
+const OPEN = { id: PANE, title: TITLE, rows: INLINE_ROWS } as const
 
 // Read from the manifest once per load, so the header can't drift from the release.
 let manifestVersion: Promise<string | undefined> | undefined
@@ -901,7 +906,8 @@ function UsageButtons(E: Els, v: View, $: EngineInterface, cols: number, where: 
   )
 }
 
-function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
+/** CTX, 5H and 7D on one row, short bars, figures beside them. */
+function gaugeRow(E: Els, v: View, cols: number) {
   const { Box, Text } = E
   const { five, week } = limitsOf(v)
   const barW = cols >= 140 ? 12 : cols >= 110 ? 9 : cols >= 90 ? 6 : 4
@@ -921,12 +927,19 @@ function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
   }
   const ctx = v.u?.ctxTokens !== undefined && cols >= 100 ? `${fmtTokens(v.u.ctxTokens)}/${fmtTokens(v.u.ctxWindow)}` : ''
   return (
+    <Box flexDirection="row" gap={3} flexShrink={1}>
+      {gauge('CTX', v.u?.ctxPercent, ctx, 0)}
+      {gauge('5H', five?.percentUsed, reset(five), 1)}
+      {cols >= 80 ? gauge('7D', week?.percentUsed, reset(week), 2) : null}
+    </Box>
+  )
+}
+
+function compactBand(E: Els, v: View, cols: number, $: EngineInterface) {
+  const { Box } = E
+  return (
     <Box flexDirection="row" justifyContent="space-between" gap={2}>
-      <Box flexDirection="row" gap={3} flexShrink={1}>
-        {gauge('CTX', v.u?.ctxPercent, ctx, 0)}
-        {gauge('5H', five?.percentUsed, reset(five), 1)}
-        {cols >= 80 ? gauge('7D', week?.percentUsed, reset(week), 2) : null}
-      </Box>
+      {gaugeRow(E, v, cols)}
       {UsageButtons(E, v, $, cols, 'band')}
     </Box>
   )
@@ -1222,9 +1235,24 @@ function FooterRule(E: Els, cols: number): RenderChildren {
   return <Text dimColor>{'─'.repeat(cols)}</Text>
 }
 
-/** The panel's foot: a rule, the usage lines, then the settings row. */
-function panelFooter(E: Els, v: View, cols: number, $: EngineInterface): { node: RenderChildren; rows: number } {
+/**
+ * The panel's foot: a rule, the usage lines, then the settings row. Seated inline under
+ * the chat, where rows are scarce and columns are not, the three bars share one row.
+ */
+function panelFooter(E: Els, v: View, cols: number, $: EngineInterface, inline = false): { node: RenderChildren; rows: number } {
   const { Box } = E
+  if (inline && !v.open) {
+    return {
+      rows: 3,
+      node: (
+        <Box key="hud-foot" flexDirection="column" flexShrink={0}>
+          {FooterRule(E, cols)}
+          {gaugeRow(E, v, cols)}
+          {UsageButtons(E, v, $, cols, 'panel')}
+        </Box>
+      ),
+    }
+  }
   const lines = usageLines(E, v, cols)
   return {
     rows: lines.length + 2,
@@ -1241,13 +1269,13 @@ function panelFooter(E: Els, v: View, cols: number, $: EngineInterface): { node:
 async function movePlacement($: EngineInterface) {
   const to = await update($, placement, p => (p === 'panel' ? 'band' : 'panel'))
   await $.store.set('placement', to).catch(() => undefined)
-  if (to === 'panel') await $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+  if (to === 'panel') await $.ui.open(OPEN).catch(() => undefined)
 }
 
 async function togglePanel($: EngineInterface) {
   const pane = (await $.ui.panes()).find(p => p.id === PANE)
   if (pane?.isShown) await $.ui.close({ id: PANE })
-  else await $.ui.open({ id: PANE, title: TITLE })
+  else await $.ui.open(OPEN)
 }
 
 async function refreshBreakdown($: EngineInterface, columns: number) {
@@ -1298,7 +1326,7 @@ export function cardWindow(rows: readonly number[], offset: number, room: number
   return out
 }
 
-function Header(E: Els, v: View, cols: number, version: string | undefined) {
+function Header(E: Els, v: View, cols: number, version: string | undefined, gap = 1) {
   const { Box, Text } = E
   const running = v.ag.filter(a => LIVE.has(a.status)).length + v.jobs.filter(j => j.status === 'running' && !isShadowed(j, v.ag)).length
   const label = version ? `Agents HUD v${version}` : 'Agents HUD'
@@ -1306,7 +1334,7 @@ function Header(E: Els, v: View, cols: number, version: string | undefined) {
     ? `${v.l.repo?.split('/').pop() ?? '?'} · ${v.l.rows.length} lanes · ${running} running`
     : `${v.ag.length} · ${running} running`
   return (
-    <Box flexDirection="row" justifyContent="space-between" marginBottom={1}>
+    <Box flexDirection="row" justifyContent="space-between" marginBottom={gap}>
       <Text bold color={accent(v.t)}>
         {label}
       </Text>
@@ -1568,7 +1596,7 @@ export const register: Register = on => {
     await update($, now, () => Date.now())
     await Promise.all([refreshUsage($), refreshAgents($, Date.now()), refreshLanes($)].map(p => p.catch(() => undefined)))
     await refreshJobs($).catch(() => undefined)
-    void $.ui.open({ id: PANE, title: TITLE })
+    void $.ui.open(OPEN)
 
     startTimers($)
     return result
@@ -1607,7 +1635,7 @@ export const register: Register = on => {
     }
     if (arg === 'lanes' || arg === 'agents' || arg === 'auto') await update($, mode, () => arg as HudMode)
     closedByPerson = false
-    const opened = await $.ui.open({ id: PANE, title: TITLE })
+    const opened = await $.ui.open(OPEN)
     const md = await read($, mode)
     return {
       text: opened.isPlaced
@@ -1631,7 +1659,7 @@ export const register: Register = on => {
       triedOnPrompt = true
       const remote = (await $.session.surfaces()).some(x => x !== 'terminal')
       const pane = (await $.ui.panes()).find(p => p.id === PANE)
-      if (remote && !pane?.isPlaced) await $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+      if (remote && !pane?.isPlaced) await $.ui.open(OPEN).catch(() => undefined)
     }
     const at = await $.clock.now()
     await update($, main, m => ({ ...m, working: true, turnStartedAt: at, activity: 'thinking' as const, tool: undefined }))
@@ -1762,13 +1790,15 @@ export const register: Register = on => {
     let v = base
     let items: Item[] = []
     let room = 0
-    const foot = base.where === 'panel' ? panelFooter(E, base, cols, $) : undefined
+    const inline = e.props.placement === 'inline'
+    const headRows = inline ? 1 : 2
+    const foot = base.where === 'panel' ? panelFooter(E, base, cols, $, inline) : undefined
     // Never below two-line cards: a one-row avatar is too flat to read as a face, and one
     // line can't hold the status beside the name. Past that, the cards scroll.
     for (const density of [0, 1] as const) {
       v = { ...base, density }
       items = base.isLanes ? laneItems(E, v, cols, $) : agentItems(E, v, cols, $)
-      room = Math.max(1, budget - 2 - CARD_ROWS[density] - (foot?.rows ?? 0))
+      room = Math.max(1, budget - headRows - CARD_ROWS[density] - (foot?.rows ?? 0))
       if (items.reduce((n, i) => n + i.rows, 0) <= room) break
     }
     // Every card has now said how wide a bar its text leaves: draw them all at the narrowest.
@@ -1797,7 +1827,7 @@ export const register: Register = on => {
       // A docked pane's body doesn't size its tree, so "100%" would collapse to the
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
       <Box flexDirection="column" paddingLeft={GUTTER} paddingRight={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
-        {Header(E, v, cols, version)}
+        {Header(E, v, cols, version, headRows - 1)}
         {mainCard(E, v, cols, branch)}
         <Box flexDirection="column" flexGrow={1} overflow="hidden">
           {body}

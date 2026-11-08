@@ -44,13 +44,14 @@ If you already installed the mod from a terminal at the user scope on the same c
 ### Opening the panel
 
 - **CLI:** the panel opens by itself beside the chat in fullscreen mode, or when your terminal is at least 144 columns wide. In a narrower terminal, run `/agents-hud` to open it.
+- **Beside the chat or under it:** Claude Code docks the panel beside the chat only in fullscreen mode at 110 columns or wider (a Claude Code rule the mod can't change). Narrower, it sits under the chat, 10 rows tall, with the three usage bars on one row. To keep it beside the chat in a narrow window, shrink the terminal font until the window is 110 columns wide.
 - **Desktop app:** the panel opens on your first prompt of each session. To open it sooner, or after you close it, run `/agents-hud`.
 
 If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
-- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.16`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.17`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active. A finished agent stays as long as Claude Code still lists it, and leaves the panel 10 minutes after Claude Code stops listing it. A finished relay or Codex job leaves 10 minutes after it ends.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
