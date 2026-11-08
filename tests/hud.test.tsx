@@ -124,9 +124,10 @@ for (const surface of ['terminal', 'desktop'] as const) {
     on('store.set', () => ({ value: undefined }))
     await $.session.start({ cwd: REPO, surface, isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface })
-    // Shut, the panel sets CTX on one row and 5H beside 7D on the next, under short labels.
+    // Shut, the side panel gives CTX, 5H and 7D a row each, under short labels.
     expect(await ui.find({ type: 'Text', text: /^CTX .*25%/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /^5H .*14%.*7D .*22%/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^5H .*14%/ })).toBeTruthy()
+    expect(await ui.find({ type: 'Text', text: /^7D .*22%/ })).toBeTruthy()
     // Each meter wears its own colour: the labels of the three bars differ.
     const labels = await Promise.all(['CTX', '5H', '7D'].map(l => ui.find({ type: 'Text', text: new RegExp(`^${l} +$`) })))
     expect(new Set(labels.map(x => x?.props.color)).size).toBe(3)
@@ -161,8 +162,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
   test(`a crowded panel stops at two-line cards and scrolls, with no paging rows (${surface})`, async ($, on) => {
     engine(on, 30)
     await $.session.start({ cwd: REPO, surface, isInteractive: true })
-    // An odd count of rows for two-row cards, so one is cut by the window's edge.
-    const ui = await $.ui.mount({ ...PANE, surface, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 31 } } })
+    // An odd count of rows left for two-row cards, so one is cut by the window's edge.
+    const ui = await $.ui.mount({ ...PANE, surface, props: { ...PANE.props, scroll: { offset: 0, bodyRows: 30 } } })
 
     expect(await ui.find({ type: 'Text', text: /task 0/ })).toBeTruthy()
     expect(await ui.find({ type: 'Text', text: /task 29/ })).toBeFalsy()
@@ -389,12 +390,9 @@ for (const bodyColumns of [40, 56, 90]) {
     on('store.set', () => ({ value: undefined }))
     await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const { top, under, bars: shut } = await rowBars(ui)
-    expect(shut.map(b => b[0])).toEqual(SHORT)
-    // 5H and 7D match; CTX's bar runs on so its line ends where theirs does.
-    expect(shut[1]![1]).toBeGreaterThanOrEqual(4)
-    expect(shut[1]![1]).toBe(shut[2]![1])
-    expect(top.length).toBe(under.length)
+    const shut = await barLengths(ui, SHORT)
+    expect(shut[0]).toBeGreaterThan(3)
+    expect(new Set(shut).size).toBe(1)
     await ui.press({ key: 'hud-more' })
     const open = await barLengths(ui)
     expect(open[0]).toBeGreaterThan(3)
@@ -415,28 +413,39 @@ for (const bodyColumns of [56, 120]) {
   })
 }
 
-// Shut, the usage takes two rows, not three: CTX on top, 5H beside 7D under it. The
-// countdowns stay while the bars keep 4 cells; the dates are in "more".
-for (const [bodyColumns, keepsResets] of [
-  [90, true],
-  [56, true],
-  [40, false],
+// Shut, the side panel gives each bar a row and the bars give up length for the reset
+// time before the time goes: the full date while the bars keep 12 cells, the weekday and
+// hour while they keep 8, then the countdown.
+for (const [bodyColumns, weekly] of [
+  [90, /↻ \d+d \d+h · \w{3}, \w{3} \d+, \d+:\d\d [AP]M$/],
+  [46, /↻ \d+d \d+h · \w{3} \d+(:\d\d)? [AP]M$/],
+  [36, /↻ \d+d \d+h$/],
 ] as const) {
-  test(`a shut panel ${bodyColumns} columns wide fits CTX, then 5H and 7D, in two rows`, async ($, on) => {
+  test(`a shut side panel ${bodyColumns} columns wide gives each bar a row and says the weekly reset as ${weekly}`, async ($, on) => {
     engine(on)
     await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const { top, under, bars } = await rowBars(ui)
-    expect(under.length).toBeLessThanOrEqual(bodyColumns - 2)
-    expect(bars.map(b => b[0])).toEqual(['CTX', '5H', '7D'])
-    expect(bars[1]![1]).toBe(bars[2]![1])
-    expect(bars[1]![1]).toBeGreaterThanOrEqual(4)
-    expect(top.length).toBe(under.length)
-    expect(top).toMatch(/\d+k\/\d+k/)
-    expect(/↻ \d+d \d+h/.test(under)).toBe(keepsResets)
+    const row = await ui.find({ type: 'Text', text: /^ *7D +[█▏▎▍▌▋▊▉░]+ +\d+%/ })
+    expect(row?.text).toMatch(weekly)
+    const lens = await barLengths(ui, SHORT)
+    expect(new Set(lens).size).toBe(1)
+    expect(lens[0]).toBeGreaterThan(3)
     await ui.unmount()
   })
 }
+
+// Under the chat, beside the cards, the shut usage stays two rows: CTX, then 5H beside 7D,
+// CTX's line ending where 7D's does.
+test('under the chat, the shut usage is two rows with CTX ending where 7D does', async ($, on) => {
+  engine(on)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...INLINE, surface: 'terminal' })
+  const { top, under, bars } = await rowBars(ui)
+  expect(bars.map(b => b[0])).toEqual(['CTX', '5H', '7D'])
+  expect(bars[1]![1]).toBe(bars[2]![1])
+  expect(top.length).toBe(under.length)
+  await ui.unmount()
+})
 
 // Finished work lingering half an hour crowded the panel. An agent the engine still lists
 // stays however long ago it finished; once the engine stops listing it, it goes 10 minutes later.

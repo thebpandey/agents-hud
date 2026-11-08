@@ -51,7 +51,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### What you see
 
-- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.23`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
+- **Header:** the panel's top line shows the mod's name and installed version (for example `Agents HUD v0.2.24`), so you can tell whether an update has loaded. While `/lanes` runs, the right side shows the repo and lane count.
 - **This session** is the top card. Below it are your subagents and teammates, running ones first, then the most recently active. A finished agent stays as long as Claude Code still lists it, and leaves the panel 10 minutes after Claude Code stops listing it. A finished relay or Codex job leaves 10 minutes after it ends.
 - **Names:** each subagent and job gets a name of its own (Nova, Bolt, Pixel…), which it keeps for the session.
 - **Click an agent's name** to open its transcript.
@@ -62,7 +62,7 @@ If you close the panel, it stays closed until you run `/agents-hud` again.
 
 ### Usage stats and settings
 
-The bottom of the panel shows three bars in two rows, CTX on top and 5H beside 7D under it, each in its own colour:
+The bottom of the side panel shows three bars, CTX, 5H and 7D, each on its own row and in its own colour. Under the chat, beside the agents, they take two rows: CTX on top, 5H beside 7D under it.
 
 | Bar | Shows |
 |---|---|
@@ -70,7 +70,7 @@ The bottom of the panel shows three bars in two rows, CTX on top and 5H beside 7
 | **5H** | Your 5-hour plan limit, with a reset countdown |
 | **7D** | Your weekly plan limit, with a reset countdown |
 
-In a narrow panel the bars shorten, then the countdowns go. The reset day and time are in `▴`.
+In the side panel each reset shows its countdown and, room allowing, its day and time; the bars shorten before the countdown goes. Under the chat the countdowns show while there's room, and the day and time are in `▴`.
 
 Any bar turns amber at 60% and red at 85%.
 

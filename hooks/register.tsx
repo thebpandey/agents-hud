@@ -1368,7 +1368,10 @@ function FooterRule(E: Els, cols: number): RenderChildren {
 function panelFooter(E: Els, v: View, cols: number, $: EngineInterface, max = Infinity): { node: RenderChildren; rows: number } {
   const { Box } = E
   // The rule and the buttons always draw, so "less" stays in reach however short the pane.
-  const lines = usageLines(E, v, cols, Math.max(1, max - 2))
+  // Shut, a stacked panel gives CTX, 5H and 7D a row each, figures beside the bars, while
+  // its rows allow; the split layout under the chat keeps the two-row form.
+  const room = Math.max(1, max - 2)
+  const lines = v.open ? usageLines(E, v, cols, room) : room >= 3 ? besideBars(E, v, cols, 0) : room >= 2 ? twoRowBars(E, v, cols) : [oneRowBars(E, v, cols)]
   return {
     rows: lines.length + 2,
     node: (
