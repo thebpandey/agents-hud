@@ -1194,7 +1194,7 @@ function oneRowBars(E: Els, v: View, cols: number): RenderChildren {
 
 /**
  * The shut panel's usage in two rows: CTX and its tokens on top, 5H and 7D side by side
- * under it, one bar length for all three. The countdowns drop before the bars go under 4.
+ * under it at one bar length. The countdowns drop before the bars go under 4.
  */
 function twoRowBars(E: Els, v: View, cols: number): RenderChildren[] {
   const { Text } = E
@@ -1209,26 +1209,51 @@ function twoRowBars(E: Els, v: View, cols: number): RenderChildren[] {
   const fixed = (resets: boolean) => 4 + 4 + 2 + 4 + 4 + (resets ? (r5 ? r5.length + 1 : 0) + (r7 ? r7.length + 1 : 0) : 0)
   const resets = Math.floor((cols - fixed(true)) / 2) >= 4
   const barW = Math.max(3, Math.min(16, Math.floor((cols - fixed(resets)) / 2)))
-  const gauge = (label: string, pct: number | undefined, right: string, meter: Meter, lead = '') => (
+  // CTX's bar runs on until its line ends where the 5H/7D line does, so the block reads square.
+  const shown5 = resets ? r5 : ''
+  const shown7 = resets ? r7 : ''
+  const underW = 4 + barW + 4 + (shown5 ? shown5.length + 1 : 0) + 2 + 4 + barW + 4 + (shown7 ? shown7.length + 1 : 0)
+  const tok = ctxTokens(v)
+  const ctxW = Math.max(barW, underW - (4 + 4 + (tok ? tok.length + 1 : 0)))
+  const gauge = (label: string, pct: number | undefined, right: string, meter: Meter, lead = '', w = barW) => (
     <Text key={`g-${label}`}>
       {lead}
       <Text bold color={v.t.meters[meter]}>
         {label.padEnd(4)}
       </Text>
-      {Bar(E, pct, barW, v.t, meter)}
+      {Bar(E, pct, w, v.t, meter)}
       {Pct(E, pct)}
       {right ? <Text dimColor> {right}</Text> : null}
     </Text>
   )
   return [
     <Text key="use-ctx" wrap="truncate-end">
-      {gauge('CTX', v.u?.ctxPercent, ctxTokens(v), 0)}
+      {gauge('CTX', v.u?.ctxPercent, tok, 0, '', ctxW)}
     </Text>,
     <Text key="use-limits" wrap="truncate-end">
-      {gauge('5H', five?.percentUsed, resets ? r5 : '', 1)}
-      {gauge('7D', week?.percentUsed, resets ? r7 : '', 2, '  ')}
+      {gauge('5H', five?.percentUsed, shown5, 1)}
+      {gauge('7D', week?.percentUsed, shown7, 2, '  ')}
     </Text>,
   ]
+}
+
+/**
+ * "more" beside the cards, where rows are what's short: the figures sit beside the bars,
+ * not under them, and no section heads, so every context category fits in fewer rows.
+ * The categories fold into "n smaller" only when `max` rows can't hold them all.
+ */
+function besideMoreLines(E: Els, v: View, cols: number, max = Infinity): RenderChildren[] {
+  const { five, week, others } = limitsOf(v)
+  const [ctxRow, ...limitRows] = besideBars(E, v, cols, 0)
+  const lims = [five, week, ...others].filter((l): l is HudLimit => l !== undefined)
+  const limits: RenderChildren[] = []
+  limitRows.forEach((row, i) => {
+    limits.push(row)
+    const l = lims[i]
+    const pl = l ? PaceLine(E, l, v.at, 4) : null
+    if (pl) limits.push(pl)
+  })
+  return [ctxRow, ...catLines(E, v, cols, 0, Math.max(1, max - 1 - limits.length)), ...limits]
 }
 
 /**
@@ -1917,7 +1942,7 @@ export const register: Register = on => {
     if (split) {
       const left = Math.max(36, Math.min(60, Math.floor(cols * 0.45)))
       const right = cols - left - 3
-      const full = usageLines(E, base, left)
+      const full = base.open ? besideMoreLines(E, base, left) : usageLines(E, base, left)
       // "more" asks the pane for every row its figures take, so none is cut or scrolled;
       // "less" goes back to the short pane. A size the person dragged still wins.
       const want = base.open ? Math.max(INLINE_ROWS, full.length + 2) : INLINE_ROWS
@@ -1926,7 +1951,7 @@ export const register: Register = on => {
         void $.ui.open({ ...OPEN, rows: want }).catch(() => undefined)
       }
       const rows = Math.max(2, budget - 2)
-      const stats = full.length <= rows ? full : usageLines(E, base, left, rows)
+      const stats = full.length <= rows ? full : besideMoreLines(E, base, left, rows)
       const c = await cards(right, rows)
       return (
         <Box flexDirection="column" paddingLeft={GUTTER} paddingRight={GUTTER}>
