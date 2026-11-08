@@ -84,7 +84,7 @@ type View = {
 }
 
 type Density = 0 | 1
-const CARD_ROWS = [4, 2] as const
+const CARD_ROWS = [3, 2] as const
 
 // ── Formatting ───────────────────────────────────────────────────────────
 
@@ -244,8 +244,9 @@ async function nextAvatars($: EngineInterface, name?: string): Promise<string> {
   return style
 }
 
-// The pixel rows each density draws: the whole robot, then its head and chest.
-const AV_PIXELS = [[0, 1, 2, 3, 4, 5], [1, 2, 3, 4]] as const
+// The sprite's head and chest: 4 pixel rows, 2 terminal rows, 6 cells across, at
+// either density. The densities differ only in the blank row between cards.
+const AV_PIXELS = [[1, 2, 3, 4], [1, 2, 3, 4]] as const
 
 /** What an avatar is doing, which picks its motion; 'still' draws it at rest. */
 type Motion = 'still' | 'thinking' | 'generating' | 'tool' | 'running'

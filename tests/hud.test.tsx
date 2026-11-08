@@ -484,3 +484,17 @@ test('docked beside the chat, the pane keeps its full usage footer, one bar a ro
   expect(row).toBeFalsy()
   await ui.unmount()
 })
+
+// Three-row avatars made each card four rows tall; two keep cards compact so more agents fit.
+test('an uncrowded terminal panel draws every avatar two rows tall and six cells wide', async ($, on) => {
+  engine(on, 2)
+  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  const avs = await ui.findAll({ type: 'Raster' })
+  expect(avs.length).toBeGreaterThan(1)
+  for (const av of avs) {
+    expect(av.props.rows).toBe(2)
+    expect(av.props.columns).toBe(6)
+  }
+  await ui.unmount()
+})
