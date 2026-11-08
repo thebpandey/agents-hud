@@ -1150,18 +1150,73 @@ function besideBars(E: Els, v: View, cols: number, indent: number): RenderChildr
 }
 
 /**
- * The panel's usage figures, one row per entry so a caller can count them: the
- * three bars, or with "more" open the context breakdown and the limits with pace.
+ * CTX, 5H and 7D side by side on one row, one bar length, for the shut panel. Short
+ * bars that keep the reset countdowns beat long ones without them; the context's
+ * tokens go first, then bar length, then the countdowns. The dates are in "more".
  */
-function usageLines(E: Els, v: View, cols: number): RenderChildren[] {
-  if (!v.open) return besideBars(E, v, cols, 0)
-  return [
-    usageHead(E, v, 'CONTEXT WINDOW'),
-    ...ctxLines(E, v, cols, 2),
-    ...catLines(E, v, cols, 2),
-    usageHead(E, v, 'PLAN LIMITS'),
-    ...limitLines(E, v, cols, 2, { detail: true, withPace: true }),
+function oneRowBars(E: Els, v: View, cols: number): RenderChildren {
+  const { Text } = E
+  const { five, week } = limitsOf(v)
+  const countdown = (l?: HudLimit) => {
+    const t = l?.resetsAt ? Date.parse(l.resetsAt) : NaN
+    return Number.isFinite(t) ? `↻ ${fmtDur(t - v.at)}` : ''
+  }
+  const all: [string, number | undefined, string, Meter][] = [
+    ['CTX', v.u?.ctxPercent, ctxTokens(v), 0],
+    ['5H', five?.percentUsed, countdown(five), 1],
+    ['7D', week?.percentUsed, countdown(week), 2],
   ]
+  const fits = (bar: number, tokens: boolean, resets: boolean) =>
+    all.reduce((n, [label, , right], i) => n + label.length + 1 + bar + 4 + ((i === 0 ? tokens : resets) && right ? right.length + 1 : 0), 0) + 2 * (all.length - 1) <= cols
+  const tries: [number, boolean, boolean][] = [
+    [8, true, true], [6, true, true], [6, false, true], [4, false, true], [3, false, true], [6, false, false], [4, false, false],
+  ]
+  const [barW, tokens, resets] = tries.find(([b, t, r]) => fits(b, t, r)) ?? [3, false, false]
+  return (
+    <Text key="use-row" wrap="truncate-end">
+      {all.map(([label, pct, right, meter], i) => {
+        const shown = (i === 0 ? tokens : resets) && right
+        return (
+          <Text key={`g-${label}`}>
+            {i > 0 ? '  ' : ''}
+            <Text bold color={v.t.meters[meter]}>
+              {label}{' '}
+            </Text>
+            {Bar(E, pct, barW, v.t, meter)}
+            {Pct(E, pct)}
+            {shown ? <Text dimColor> {right}</Text> : null}
+          </Text>
+        )
+      })}
+    </Text>
+  )
+}
+
+/**
+ * The panel's usage figures, one row per entry so a caller can count them: the three
+ * bars on one row, or with "more" open the context breakdown and the limits with pace,
+ * cut to `max` rows: the categories fold first, then the section heads and context
+ * figures, then the pace lines, so the limits are the last to go.
+ */
+function usageLines(E: Els, v: View, cols: number, max = Infinity): RenderChildren[] {
+  if (!v.open) return [oneRowBars(E, v, cols)]
+  const limits = limitLines(E, v, cols, 2, { detail: true, withPace: true })
+  const ctx = ctxLines(E, v, cols, 2)
+  const fixed = 2 + ctx.length + limits.length
+  if (fixed + 1 <= max) {
+    return [
+      usageHead(E, v, 'CONTEXT WINDOW'),
+      ...ctx,
+      ...catLines(E, v, cols, 2, max - fixed),
+      usageHead(E, v, 'PLAN LIMITS'),
+      ...limits,
+    ]
+  }
+  const ctxRow = usageRow(E, v, 'Context', v.u?.ctxPercent, '', 0, cols, 2)
+  if (1 + limits.length <= max) return [ctxRow, ...limits]
+  const bare = limitLines(E, v, cols, 2, { detail: true, withPace: false })
+  if (1 + bare.length <= max) return [ctxRow, ...bare]
+  return [oneRowBars(E, v, cols)]
 }
 
 /**
@@ -1236,25 +1291,11 @@ function FooterRule(E: Els, cols: number): RenderChildren {
   return <Text dimColor>{'─'.repeat(cols)}</Text>
 }
 
-/**
- * The panel's foot: a rule, the usage lines, then the settings row. Seated inline under
- * the chat, where rows are scarce and columns are not, the three bars share one row.
- */
-function panelFooter(E: Els, v: View, cols: number, $: EngineInterface, inline = false): { node: RenderChildren; rows: number } {
+/** The panel's foot: a rule, the usage lines, then the settings row. */
+function panelFooter(E: Els, v: View, cols: number, $: EngineInterface, max = Infinity): { node: RenderChildren; rows: number } {
   const { Box } = E
-  if (inline && !v.open) {
-    return {
-      rows: 3,
-      node: (
-        <Box key="hud-foot" flexDirection="column" flexShrink={0}>
-          {FooterRule(E, cols)}
-          {gaugeRow(E, v, cols)}
-          {UsageButtons(E, v, $, cols, 'panel')}
-        </Box>
-      ),
-    }
-  }
-  const lines = usageLines(E, v, cols)
+  // The rule and the buttons always draw, so "less" stays in reach however short the pane.
+  const lines = usageLines(E, v, cols, Math.max(1, max - 2))
   return {
     rows: lines.length + 2,
     node: (
@@ -1793,7 +1834,11 @@ export const register: Register = on => {
     let room = 0
     const inline = e.props.placement === 'inline'
     const headRows = inline ? 1 : 2
-    const foot = base.where === 'panel' ? panelFooter(E, base, cols, $, inline) : undefined
+    // Under the chat a 10-row pane can't hold "more" and the cards too: "more" asked for
+    // the usage, so it takes the pane and the cards come back with "less".
+    const usageOnly = inline && base.where === 'panel' && base.open
+    const footMax = usageOnly ? budget - headRows : budget - headRows - CARD_ROWS[1] - 1
+    const foot = base.where === 'panel' ? panelFooter(E, base, cols, $, footMax) : undefined
     // Never below two-line cards: a one-row avatar is too flat to read as a face, and one
     // line can't hold the status beside the name. Past that, the cards scroll.
     for (const density of [0, 1] as const) {
@@ -1807,7 +1852,7 @@ export const register: Register = on => {
     v.bar.cap = v.bar.min
     items = base.isLanes ? laneItems(E, v, cols, $) : agentItems(E, v, cols, $)
     const total = items.reduce((n, i) => n + i.rows, 0)
-    scrolling.active = total > room
+    scrolling.active = !usageOnly && total > room
     scrolling.max = Math.max(0, total - room)
     scrolling.window = room
     const offset = scrolling.active ? Math.min(await read($, skip), scrolling.max) : 0
@@ -1829,10 +1874,12 @@ export const register: Register = on => {
       // cards' height: fill its rows outright so the usage sits on the bottom edge.
       <Box flexDirection="column" paddingLeft={GUTTER} paddingRight={GUTTER} height={e.props.placement === 'dock' ? budget : undefined}>
         {Header(E, v, cols, version, headRows - 1)}
-        {mainCard(E, v, cols, branch)}
-        <Box flexDirection="column" flexGrow={1} overflow="hidden">
-          {body}
-        </Box>
+        {usageOnly ? null : mainCard(E, v, cols, branch)}
+        {usageOnly ? null : (
+          <Box flexDirection="column" flexGrow={1} overflow="hidden">
+            {body}
+          </Box>
+        )}
         {foot?.node}
       </Box>
     )

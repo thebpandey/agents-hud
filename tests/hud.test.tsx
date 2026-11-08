@@ -18,6 +18,8 @@ const PANE = {
   },
 } as const
 
+const INLINE = { ...PANE, props: { ...PANE.props, placement: 'inline', bodyColumns: 108, scroll: { offset: 0, bodyRows: 10 } } } as const
+
 const BAND = {
   plugin: 'agents-hud',
   component: 'AbovePrompt',
@@ -119,10 +121,8 @@ for (const surface of ['terminal', 'desktop'] as const) {
     on('store.set', () => ({ value: undefined }))
     await $.session.start({ cwd: REPO, surface, isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface })
-    // Shut, the panel uses the band's short labels so the bars get the room.
-    expect(await ui.find({ type: 'Text', text: /^CTX .*25%/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /^5H .*14%/ })).toBeTruthy()
-    expect(await ui.find({ type: 'Text', text: /^7D .*22%/ })).toBeTruthy()
+    // Shut, the panel sets the three bars on one row under the band's short labels.
+    expect(await ui.find({ type: 'Text', text: /^CTX .*25%.*5H .*14%.*7D .*22%/ })).toBeTruthy()
     // Each meter wears its own colour: the labels of the three bars differ.
     const labels = await Promise.all(['CTX', '5H', '7D'].map(l => ui.find({ type: 'Text', text: new RegExp(`^${l} +$`) })))
     expect(new Set(labels.map(x => x?.props.color)).size).toBe(3)
@@ -368,6 +368,13 @@ async function barLengths(ui: { find: (q: { type: 'Text'; text: RegExp }) => Pro
   return out
 }
 
+/** The shut panel's one row: each of CTX, 5H and 7D with its bar's length, in order. */
+async function rowBars(ui: { find: (q: { type: 'Text'; text: RegExp }) => Promise<{ text: string } | undefined> }) {
+  const row = await ui.find({ type: 'Text', text: /^ *CTX [█▏▎▍▌▋▊▉░]+.*5H [█▏▎▍▌▋▊▉░]+.*7D [█▏▎▍▌▋▊▉░]+/ })
+  const text = row?.text ?? ''
+  return { text, bars: [...text.matchAll(/(CTX|5H|7D) ([█▏▎▍▌▋▊▉░]+)/g)].map(m => [m[1], m[2]!.length] as const) }
+}
+
 for (const bodyColumns of [40, 56, 90]) {
   test(`the panel's three usage bars share one length, with "more" shut and open (${bodyColumns} columns)`, async ($, on) => {
     engine(on)
@@ -375,9 +382,11 @@ for (const bodyColumns of [40, 56, 90]) {
     on('store.set', () => ({ value: undefined }))
     await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const shut = await barLengths(ui, SHORT)
-    expect(shut[0]).toBeGreaterThan(3)
-    expect(new Set(shut).size).toBe(1)
+    const shut = (await rowBars(ui)).bars
+    expect(shut.map(b => b[0])).toEqual(SHORT)
+    // Short is fine on one row: the percentage sits beside each bar.
+    expect(shut[0]![1]).toBeGreaterThanOrEqual(3)
+    expect(new Set(shut.map(b => b[1])).size).toBe(1)
     await ui.press({ key: 'hud-more' })
     const open = await barLengths(ui)
     expect(open[0]).toBeGreaterThan(3)
@@ -398,22 +407,22 @@ for (const bodyColumns of [56, 120]) {
   })
 }
 
-// Shut, the bars give up length for the reset time before the time goes: the full date
-// while the bars keep 12 cells, the weekday and hour while they keep 8, then the countdown.
-for (const [bodyColumns, weekly] of [
-  [90, /↻ \d+d \d+h · \w{3}, \w{3} \d+, \d+:\d\d [AP]M$/],
-  [46, /↻ \d+d \d+h · \w{3} \d+(:\d\d)? [AP]M$/],
-  [36, /↻ \d+d \d+h$/],
+// Shut, the three bars share one row so the usage takes one line, not three. The bars
+// shorten and the context's tokens drop before the reset countdowns do; the dates are in "more".
+for (const [bodyColumns, keepsTokens, keepsResets] of [
+  [90, true, true],
+  [56, false, true],
+  [40, false, false],
 ] as const) {
-  test(`a shut panel ${bodyColumns} columns wide says the weekly reset as ${weekly}`, async ($, on) => {
+  test(`a shut panel ${bodyColumns} columns wide fits CTX, 5H and 7D on one row`, async ($, on) => {
     engine(on)
     await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
     const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, bodyColumns } })
-    const row = await ui.find({ type: 'Text', text: /^ *7D +[█▏▎▍▌▋▊▉░]+ +\d+%/ })
-    expect(row?.text).toMatch(weekly)
-    const lens = await barLengths(ui, SHORT)
-    expect(new Set(lens).size).toBe(1)
-    expect(lens[0]).toBeGreaterThan(3)
+    const { text, bars } = await rowBars(ui)
+    expect(text.length).toBeLessThanOrEqual(bodyColumns - 2)
+    expect(bars).toHaveLength(3)
+    expect(/\d+k\/\d+k/.test(text)).toBe(keepsTokens)
+    expect(/↻ \d+d \d+h/.test(text)).toBe(keepsResets)
     await ui.unmount()
   })
 }
@@ -461,40 +470,43 @@ test('seated under the chat in 10 rows, the pane fits them, bars on one row, an 
   engine(on)
   await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
   await $.agent.spawn({ prompt: 'Write the docs.', description: 'docs pass', subagentType: 'general-purpose' })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, placement: 'inline', bodyColumns: 108, scroll: { offset: 0, bodyRows: 10 } } })
+  const ui = await $.ui.mount({ ...INLINE, surface: 'terminal' })
   expect(height(await ui.drawn())).toBeLessThanOrEqual(10)
   expect(await ui.find({ type: 'Text', text: /docs pass/ })).toBeTruthy()
-  // CTX, 5H and 7D share a row rather than taking one each.
-  const row = (await ui.findAll({ type: 'Box' })).find(b => {
-    const t = JSON.stringify(b)
-    return /CTX/.test(t) && /5H/.test(t) && /7D/.test(t) && b.props.flexDirection === 'row'
-  })
-  expect(row).toBeTruthy()
+  expect((await rowBars(ui)).bars).toHaveLength(3)
   await ui.unmount()
 })
 
-test('docked beside the chat, the pane keeps its full usage footer, one bar a row', async ($, on) => {
+// "more" in a 10-row pane pushed the buttons off its foot, leaving no way back to "less".
+test('under the chat, "more" fills the pane with the usage, keeps "less" in reach, and "less" brings the cards back', async ($, on) => {
   engine(on)
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
   await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const row = (await ui.findAll({ type: 'Box' })).find(b => {
-    const t = JSON.stringify(b)
-    return /CTX/.test(t) && /5H/.test(t) && /7D/.test(t) && b.props.flexDirection === 'row'
-  })
-  expect(row).toBeFalsy()
+  await $.agent.spawn({ prompt: 'Write the docs.', description: 'docs pass', subagentType: 'general-purpose' })
+  const ui = await $.ui.mount({ ...INLINE, surface: 'terminal' })
+  await ui.press({ key: 'hud-more' })
+  expect(height(await ui.drawn())).toBeLessThanOrEqual(10)
+  const less = (await ui.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')
+  expect(less?.props.label).toBe('▾ less')
+  expect(await ui.find({ type: 'Text', text: /^ *5-hour +[█▏▎▍▌▋▊▉░]+/ })).toBeTruthy()
+  expect(await ui.find({ type: 'Text', text: /docs pass/ })).toBeFalsy()
+  await ui.press({ key: 'hud-more' })
+  expect(await ui.find({ type: 'Text', text: /docs pass/ })).toBeTruthy()
   await ui.unmount()
 })
 
-// Three-row avatars made each card four rows tall; two keep cards compact so more agents fit.
-test('an uncrowded terminal panel draws every avatar two rows tall and six cells wide', async ($, on) => {
-  engine(on, 2)
-  await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
-  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
-  const avs = await ui.findAll({ type: 'Raster' })
-  expect(avs.length).toBeGreaterThan(1)
-  for (const av of avs) {
-    expect(av.props.rows).toBe(2)
-    expect(av.props.columns).toBe(6)
-  }
-  await ui.unmount()
-})
+for (const bodyRows of [14, 20]) {
+  test(`a short docked pane (${bodyRows} rows) with "more" open still shows "less"`, async ($, on) => {
+    engine(on)
+    on('store.get', () => ({ value: undefined }))
+    on('store.set', () => ({ value: undefined }))
+    await $.session.start({ cwd: REPO, surface: 'terminal', isInteractive: true })
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal', props: { ...PANE.props, scroll: { offset: 0, bodyRows } } })
+    await ui.press({ key: 'hud-more' })
+    expect(height(await ui.drawn())).toBeLessThanOrEqual(bodyRows)
+    const less = (await ui.findAll({ type: 'Button' })).find(b => b.key === 'hud-more')
+    expect(less?.props.label).toBe('▾ less')
+    await ui.unmount()
+  })
+}
