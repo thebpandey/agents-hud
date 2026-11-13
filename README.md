@@ -139,3 +139,7 @@ The mod is one TypeScript hooks module that runs inside Claude Code's plugin san
 | External jobs | The lanes skill's job folders in `~/.local/state` (`model-relay.*`, `codex-lane.*`, `codex-review.*`) |
 
 In the terminal the avatars are drawn with half-block characters. In the desktop app they're drawn as SVG pixel art.
+
+---
+
+Built by [Bhaskar Pandey](https://www.bhaskarpandey.com).
